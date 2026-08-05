@@ -43,7 +43,7 @@ module Sysdat
     end
 
     def string_from(bytes) : String
-      slice = bytes.to_slice
+      slice  = bytes.to_slice
       length = slice.index(0_u8) || slice.size
       String.new(slice[0, length])
     end

@@ -7,15 +7,15 @@ module Sysdat
   ]
 
   SOCKET_SOURCES = {
-    {"/proc/net/tcp", "tcp4", false},
-    {"/proc/net/udp", "udp4", false},
+    {"/proc/net/tcp",  "tcp4", false},
+    {"/proc/net/udp",  "udp4", false},
     {"/proc/net/tcp6", "tcp6", true},
     {"/proc/net/udp6", "udp6", true},
   }
 
   struct NetworkRate
-    getter rx_bytes_per_sec : Float64
-    getter tx_bytes_per_sec : Float64
+    getter rx_bytes_per_sec   : Float64
+    getter tx_bytes_per_sec   : Float64
     getter rx_packets_per_sec : Float64
     getter tx_packets_per_sec : Float64
 
@@ -24,14 +24,14 @@ module Sysdat
   end
 
   struct NetworkInterface
-    getter name : String
-    getter rx_bytes : UInt64
+    getter name       : String
+    getter rx_bytes   : UInt64
     getter rx_packets : UInt64
-    getter rx_errors : UInt64
+    getter rx_errors  : UInt64
     getter rx_dropped : UInt64
-    getter tx_bytes : UInt64
+    getter tx_bytes   : UInt64
     getter tx_packets : UInt64
-    getter tx_errors : UInt64
+    getter tx_errors  : UInt64
     getter tx_dropped : UInt64
 
     def initialize(@name, @rx_bytes, @rx_packets, @rx_errors, @rx_dropped,
@@ -56,22 +56,22 @@ module Sysdat
   end
 
   struct WiFi
-    getter name : String
+    getter name         : String
     getter link_quality : Float64
-    getter signal_dbm : Float64
-    getter noise_dbm : Float64
+    getter signal_dbm   : Float64
+    getter noise_dbm    : Float64
 
     def initialize(@name, @link_quality, @signal_dbm, @noise_dbm)
     end
   end
 
   struct Socket
-    getter protocol : String
-    getter local_ip : String
-    getter local_port : Int32
-    getter remote_ip : String
+    getter protocol    : String
+    getter local_ip    : String
+    getter local_port  : Int32
+    getter remote_ip   : String
     getter remote_port : Int32
-    getter state : String
+    getter state       : String
 
     def initialize(@protocol, @local_ip, @local_port, @remote_ip, @remote_port, @state)
     end

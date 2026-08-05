@@ -7,15 +7,15 @@ module Sysdat
   end
 
   struct Process
-    getter pid : Int32
-    getter ppid : Int32
-    getter name : String
-    getter state : Char
-    getter utime : UInt64
-    getter stime : UInt64
-    getter threads : Int32
-    getter rss_bytes : UInt64
-    getter vsize_bytes : UInt64
+    getter pid            : Int32
+    getter ppid           : Int32
+    getter name           : String
+    getter state          : Char
+    getter utime          : UInt64
+    getter stime          : UInt64
+    getter threads        : Int32
+    getter rss_bytes      : UInt64
+    getter vsize_bytes    : UInt64
     getter memory_percent : Float64
 
     def initialize(@pid, @ppid, @name, @state, @utime, @stime, @threads,
@@ -70,11 +70,11 @@ module Sysdat
     content = SysFS.read_all("/proc/#{pid}/stat")
     return nil unless content
 
-    open_paren = content.index('(')
+    open_paren  = content.index('(')
     close_paren = content.rindex(')')
     return nil unless open_paren && close_paren && close_paren > open_paren
 
-    name = content[open_paren + 1...close_paren]
+    name   = content[open_paren + 1...close_paren]
     fields = content[(close_paren + 1)..].split
     return nil if fields.size < 22
 

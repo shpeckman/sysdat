@@ -4,19 +4,19 @@ module Sysdat
   VM_VENDOR_MARKERS  = {"QEMU"}
 
   CONTAINER_FILES = {
-    {"/.dockerenv", "Docker"},
+    {"/.dockerenv",        "Docker"},
     {"/run/.containerenv", "Podman/CRI-O"},
   }
 
   CONTAINER_CGROUP_MARKERS = {
-    {"docker", "Docker"},
-    {"lxc", "LXC"},
+    {"docker",   "Docker"},
+    {"lxc",      "LXC"},
     {"kubepods", "Kubernetes"},
   }
 
   struct Host
     getter virtual_machine : String?
-    getter container : String?
+    getter container       : String?
 
     def initialize(@virtual_machine, @container)
     end
@@ -31,8 +31,8 @@ module Sysdat
   end
 
   struct User
-    getter name : String
-    getter tty : String
+    getter name       : String
+    getter tty        : String
     getter login_time : Time
 
     def initialize(@name, @tty, @login_time)
@@ -41,7 +41,7 @@ module Sysdat
 
   def self.host : Host
     product = SysFS.read_line("/sys/class/dmi/id/product_name") || ""
-    vendor = SysFS.read_line("/sys/class/dmi/id/sys_vendor") || ""
+    vendor  = SysFS.read_line("/sys/class/dmi/id/sys_vendor") || ""
 
     virtual_machine = nil
     if VM_PRODUCT_MARKERS.any? { |marker| product.includes?(marker) } ||

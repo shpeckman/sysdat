@@ -7,9 +7,9 @@ module Sysdat
   end
 
   HWMON_SENSORS = {
-    {SensorKind::Temperature, "temp", "Temp", 1000.0},
-    {SensorKind::Fan, "fan", "Fan", 1.0},
-    {SensorKind::Voltage, "in", "Voltage", 1000.0},
+    {SensorKind::Temperature, "temp", "Temp",    1000.0},
+    {SensorKind::Fan,         "fan",  "Fan",     1.0},
+    {SensorKind::Voltage,     "in",   "Voltage", 1000.0},
   }
 
   HWMON_SENSOR_LIMIT = 10
@@ -17,7 +17,7 @@ module Sysdat
 
   struct Sensor
     getter label : String
-    getter kind : SensorKind
+    getter kind  : SensorKind
     getter value : Float64
 
     def initialize(@label, @kind, @value)
@@ -25,7 +25,7 @@ module Sysdat
   end
 
   struct HwmonChip
-    getter name : String
+    getter name    : String
     getter sensors : Array(Sensor)
 
     def initialize(@name, @sensors)
@@ -36,7 +36,7 @@ module Sysdat
     SysFS.children("/sys/class/hwmon").compact_map do |entry|
       next unless entry.starts_with?("hwmon")
 
-      base = "/sys/class/hwmon/#{entry}"
+      base    = "/sys/class/hwmon/#{entry}"
       sensors = read_hwmon_sensors(base)
       next if sensors.empty?
 

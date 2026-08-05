@@ -7,20 +7,20 @@ module Sysdat
   }
 
   struct GPU
-    getter name : String
-    getter vendor : String
-    getter busy_percent : Int32?
+    getter name          : String
+    getter vendor        : String
+    getter busy_percent  : Int32?
     getter vram_total_mb : UInt64
-    getter vram_used_mb : UInt64
-    getter core_mhz : Float64
+    getter vram_used_mb  : UInt64
+    getter core_mhz      : Float64
 
     def initialize(@name, @vendor, @busy_percent, @vram_total_mb, @vram_used_mb, @core_mhz)
     end
   end
 
   struct Display
-    getter name : String
-    getter connected : Bool
+    getter name       : String
+    getter connected  : Bool
     getter resolution : String
     getter dpms_state : String
 
@@ -32,7 +32,7 @@ module Sysdat
     SysFS.children("/sys/class/drm").compact_map do |entry|
       next unless entry.starts_with?("card") && !entry.includes?('-')
 
-      base = "/sys/class/drm/#{entry}"
+      base      = "/sys/class/drm/#{entry}"
       vendor_id = SysFS.read_line("#{base}/device/vendor").try(&.strip.downcase)
 
       GPU.new(
@@ -53,7 +53,7 @@ module Sysdat
       _, separator, connector = entry.partition('-')
       next if separator.empty?
 
-      base = "/sys/class/drm/#{entry}"
+      base      = "/sys/class/drm/#{entry}"
       connected = SysFS.read_line("#{base}/status") == "connected"
 
       Display.new(

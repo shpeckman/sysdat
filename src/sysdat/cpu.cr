@@ -1,7 +1,7 @@
 # src/sysdat/cpu.cr
 module Sysdat
   struct ThermalZone
-    getter kind : String
+    getter kind    : String
     getter celsius : Float64
 
     def initialize(@kind, @celsius)
@@ -9,14 +9,14 @@ module Sysdat
   end
 
   struct CPU
-    getter model_name : String
-    getter flags : Array(String)
-    getter logical_cores : Int32
+    getter model_name     : String
+    getter flags          : Array(String)
+    getter logical_cores  : Int32
     getter physical_cores : Int32
-    getter base_mhz : Float64
-    getter cache_kb : Int32
-    getter core_mhz : Array(Float64)
-    getter thermal_zones : Array(ThermalZone)
+    getter base_mhz       : Float64
+    getter cache_kb       : Int32
+    getter core_mhz       : Array(Float64)
+    getter thermal_zones  : Array(ThermalZone)
 
     def initialize(@model_name, @flags, @logical_cores, @physical_cores, @base_mhz,
                    @cache_kb, @core_mhz, @thermal_zones)
@@ -24,14 +24,14 @@ module Sysdat
   end
 
   struct CPUTimes
-    getter user : UInt64
-    getter nice : UInt64
-    getter system : UInt64
-    getter idle : UInt64
-    getter iowait : UInt64
-    getter irq : UInt64
+    getter user    : UInt64
+    getter nice    : UInt64
+    getter system  : UInt64
+    getter idle    : UInt64
+    getter iowait  : UInt64
+    getter irq     : UInt64
     getter softirq : UInt64
-    getter steal : UInt64
+    getter steal   : UInt64
 
     def initialize(@user, @nice, @system, @idle, @iowait, @irq, @softirq, @steal)
     end
@@ -61,18 +61,18 @@ module Sysdat
   end
 
   def self.cpu : CPU
-    model_name = ""
-    flags = [] of String
-    logical_cores = 0
-    cache_kb = 0
-    cpuinfo_mhz = 0.0
+    model_name       = ""
+    flags            = [] of String
+    logical_cores    = 0
+    cache_kb         = 0
+    cpuinfo_mhz      = 0.0
     cores_per_socket = 0
-    sockets = Set(Int32).new
+    sockets          = Set(Int32).new
 
     available = SysFS.read_lines("/proc/cpuinfo") do |line|
       key, separator, value = line.partition(':')
       next if separator.empty?
-      key = key.strip
+      key   = key.strip
       value = value.strip
 
       case key
@@ -143,7 +143,7 @@ module Sysdat
     available = SysFS.read_lines("/proc/stat") do |line|
       next unless line.starts_with?("cpu")
       fields = line.split
-      label = fields[0]
+      label  = fields[0]
       if label == "cpu"
         total = parse_cpu_times(fields)
       elsif label.size > 3 && label[3].ascii_number?

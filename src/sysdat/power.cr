@@ -1,20 +1,20 @@
 # src/sysdat/power.cr
 module Sysdat
   struct PowerSupply
-    getter name : String
-    getter kind : String
-    getter status : String
-    getter present : Bool
-    getter online : Bool?
+    getter name             : String
+    getter kind             : String
+    getter status           : String
+    getter present          : Bool
+    getter online           : Bool?
     getter capacity_percent : Int32?
-    getter energy_now_uwh : Int64?
-    getter energy_full_uwh : Int64?
-    getter power_now_uw : Int64?
-    getter voltage_now_uv : Int64?
-    getter charge_now_uah : Int64?
-    getter charge_full_uah : Int64?
-    getter current_now_ua : Int64?
-    getter time_remaining : Time::Span?
+    getter energy_now_uwh   : Int64?
+    getter energy_full_uwh  : Int64?
+    getter power_now_uw     : Int64?
+    getter voltage_now_uv   : Int64?
+    getter charge_now_uah   : Int64?
+    getter charge_full_uah  : Int64?
+    getter current_now_ua   : Int64?
+    getter time_remaining   : Time::Span?
 
     def initialize(@name, @kind, @status, @present, @online, @capacity_percent,
                    @energy_now_uwh, @energy_full_uwh, @power_now_uw, @voltage_now_uv,
@@ -40,7 +40,7 @@ module Sysdat
     kind = SysFS.read_line("#{base}/type") || ""
     kind = "Unknown" if kind.empty?
 
-    online = SysFS.read_int("#{base}/online").try { |value| value > 0 }
+    online  = SysFS.read_int("#{base}/online").try { |value| value > 0 }
     present = (SysFS.read_int("#{base}/present") || 0) > 0
 
     status = SysFS.read_line("#{base}/status") || ""
@@ -52,11 +52,11 @@ module Sysdat
                end
     end
 
-    energy_now = SysFS.read_int("#{base}/energy_now")
+    energy_now  = SysFS.read_int("#{base}/energy_now")
     energy_full = SysFS.read_int("#{base}/energy_full")
-    power_now = SysFS.read_int("#{base}/power_now")
+    power_now   = SysFS.read_int("#{base}/power_now")
     voltage_now = SysFS.read_int("#{base}/voltage_now")
-    charge_now = SysFS.read_int("#{base}/charge_now")
+    charge_now  = SysFS.read_int("#{base}/charge_now")
     charge_full = SysFS.read_int("#{base}/charge_full")
     current_now = SysFS.read_int("#{base}/current_now")
 
@@ -75,15 +75,15 @@ module Sysdat
 
     time_remaining = nil
     if status == "Charging" || status == "Discharging"
-      charging = status == "Charging"
-      rate = 0.0
+      charging  = status == "Charging"
+      rate      = 0.0
       remaining = 0.0
 
       if power_now && power_now > 0 && energy_now && energy_full && energy_full > 0
-        rate = power_now.to_f
+        rate      = power_now.to_f
         remaining = charging ? (energy_full - energy_now).to_f : energy_now.to_f
       elsif current_now && charge_now && charge_full && charge_full > 0
-        rate = current_now.abs.to_f
+        rate      = current_now.abs.to_f
         remaining = charging ? (charge_full - charge_now).to_f : charge_now.to_f
       end
 
