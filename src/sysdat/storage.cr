@@ -30,6 +30,19 @@ module Sysdat
     bytes_written    : UInt64,
     io_ticks         : UInt64
 
+  record BlockDevice,
+    name       : String,
+    model      : String,
+    size_bytes : UInt64,
+    rotational : Bool
+
+  record SwapDevice,
+    path       : String,
+    kind       : String,
+    size_bytes : UInt64,
+    used_bytes : UInt64,
+    priority   : Int32
+
   def self.filesystem(path : String) : Filesystem?
     stat = uninitialized LibSys::StatVFS
     return nil unless LibSys.statvfs(path.check_no_null_byte, pointerof(stat)) == 0
@@ -90,5 +103,49 @@ module Sysdat
     end
 
     disks
+  end
+
+  def self.block_devices : Array(BlockDevice)
+    devices = [] of BlockDevice
+
+    SysFS.children("/sys/block").each do |entry|
+      next if IGNORED_BLOCK_PREFIXES.any? { |prefix| entry.starts_with?(prefix) }
+
+      base         = "/sys/block/#{entry}"
+      size_sectors = SysFS.read_int("#{base}/size") || 0_i64
+      rotational   = SysFS.read_int("#{base}/queue/rotational") == 1
+
+      devices << BlockDevice.new(
+        name: entry,
+        model: SysFS.read_line("#{base}/device/model").try(&.strip) || "Unknown",
+        size_bytes: size_sectors.to_u64 * SECTOR_SIZE,
+        rotational: rotational
+      )
+    end
+
+    devices
+  end
+
+  def self.swaps : Array(SwapDevice)
+    devices = [] of SwapDevice
+
+    SysFS.read_lines("/proc/swaps") do |line|
+      next if line.starts_with?("Filename")
+      fields = line.split
+      next if fields.size < 5
+
+      size_kb = fields[2].to_u64?(strict: false) || 0_u64
+      used_kb = fields[3].to_u64?(strict: false) || 0_u64
+
+      devices << SwapDevice.new(
+        path: fields[0],
+        kind: fields[1],
+        size_bytes: size_kb * 1024,
+        used_bytes: used_kb * 1024,
+        priority: fields[4].to_i?(strict: false) || -1
+      )
+    end
+
+    devices
   end
 end

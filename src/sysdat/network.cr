@@ -60,6 +60,27 @@ module Sysdat
     remote_port : Int32,
     state       : String
 
+  record Route,
+    destination : String,
+    gateway     : String,
+    flags       : Int32,
+    ref_count   : Int32,
+    use         : Int32,
+    metric      : Int32,
+    mask        : String,
+    mtu         : Int32,
+    window      : Int32,
+    irtt        : Int32,
+    interface   : String
+
+  record ArpEntry,
+    ip         : String,
+    hw_type    : String,
+    flags      : String,
+    hw_address : String,
+    mask       : String,
+    device     : String
+
   def self.interfaces : Array(NetworkInterface)
     interfaces = [] of NetworkInterface
 
@@ -135,6 +156,53 @@ module Sysdat
     sockets
   end
 
+  def self.routes : Array(Route)
+    routes = [] of Route
+
+    SysFS.read_lines("/proc/net/route") do |line|
+      next if line.starts_with?("Iface")
+      fields = line.split
+      next if fields.size < 11
+
+      routes << Route.new(
+        interface: fields[0],
+        destination: decode_ipv4_hex(fields[1]),
+        gateway: decode_ipv4_hex(fields[2]),
+        flags: fields[3].to_i?(16) || 0,
+        ref_count: fields[4].to_i? || 0,
+        use: fields[5].to_i? || 0,
+        metric: fields[6].to_i? || 0,
+        mask: decode_ipv4_hex(fields[7]),
+        mtu: fields[8].to_i? || 0,
+        window: fields[9].to_i? || 0,
+        irtt: fields[10].to_i? || 0
+      )
+    end
+
+    routes
+  end
+
+  def self.arp_cache : Array(ArpEntry)
+    entries = [] of ArpEntry
+
+    SysFS.read_lines("/proc/net/arp") do |line|
+      next if line.starts_with?("IP")
+      fields = line.split
+      next if fields.size < 6
+
+      entries << ArpEntry.new(
+        ip: fields[0],
+        hw_type: fields[1],
+        flags: fields[2],
+        hw_address: fields[3],
+        mask: fields[4],
+        device: fields[5]
+      )
+    end
+
+    entries
+  end
+
   private def self.parse_wireless(field : String) : Float64
     field.to_f?(strict: false) || 0.0
   end
@@ -147,6 +215,18 @@ module Sysdat
     value == 7 ? "CLOSE" : "ACTIVE"
   end
 
+  private def self.decode_ipv4_hex(hex : String) : String
+    packed = hex.to_u32?(16)
+    return "0.0.0.0" unless packed
+
+    String.build do |io|
+      4.times do |index|
+        io << '.' if index > 0
+        io << ((packed >> (index * 8)) & 0xff)
+      end
+    end
+  end
+
   private def self.decode_endpoint(field : String, ipv6 : Bool) : Tuple(String, Int32)
     address, separator, port = field.rpartition(':')
     return {"unknown", 0} if separator.empty?
@@ -154,16 +234,6 @@ module Sysdat
     port_number = port.to_i?(16) || 0
     return {address, port_number} if ipv6 || address.size != 8
 
-    packed = address.to_u32?(16)
-    return {address, port_number} unless packed
-
-    ip = String.build do |io|
-      4.times do |index|
-        io << '.' if index > 0
-        io << ((packed >> (index * 8)) & 0xff)
-      end
-    end
-
-    {ip, port_number}
+    {decode_ipv4_hex(address), port_number}
   end
 end

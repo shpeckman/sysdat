@@ -12,6 +12,7 @@ module Sysdat
     base_mhz       : Float64,
     cache_kb       : Int32,
     core_mhz       : Array(Float64),
+    core_governors : Array(String),
     thermal_zones  : Array(ThermalZone)
 
   record CPUTimes,
@@ -88,6 +89,10 @@ module Sysdat
       khz ? khz / 1000.0 : 0.0
     end
 
+    core_governors = Array(String).new(logical_cores) do |index|
+      SysFS.read_line("/sys/devices/system/cpu/cpu#{index}/cpufreq/scaling_governor") || "unknown"
+    end
+
     CPU.new(
       model_name: model_name,
       flags: flags,
@@ -96,6 +101,7 @@ module Sysdat
       base_mhz: base_mhz,
       cache_kb: cache_kb,
       core_mhz: core_mhz,
+      core_governors: core_governors,
       thermal_zones: thermal_zones,
     )
   end

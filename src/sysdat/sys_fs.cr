@@ -47,5 +47,11 @@ module Sysdat
       length = slice.index(0_u8) || slice.size
       String.new(slice[0, length])
     end
+
+    def readlink(path : String) : String?
+      File.readlink(path)
+    rescue IO::Error
+      nil
+    end
   end
 end

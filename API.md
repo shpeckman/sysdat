@@ -42,10 +42,13 @@ Constants
 Module Methods
 --------------
 
+  `def self.arp_cache : Array(ArpEntry)`
+  `def self.block_devices : Array(BlockDevice)`
   `def self.cpu : CPU`
   `def self.cpu_stats : CPUStats`
   `def self.disk_io : Array(DiskIO)`
   `def self.displays : Array(Display)`
+  `def self.file_descriptors : FileDescriptorLimits`
   `def self.filesystem(path : String) : Filesystem?`
   `def self.gpus : Array(GPU)`
   `def self.host : Host`
@@ -59,14 +62,31 @@ Module Methods
   `def self.power_supplies : Array(PowerSupply)`
   `def self.pressure : Pressure?`
   `def self.processes(sort : ProcessSort = ProcessSort::CPU, limit : Int32? = nil) : Array(Process)`
+  `def self.routes : Array(Route)`
   `def self.sockets : Array(Socket)`
+  `def self.swaps : Array(SwapDevice)`
   `def self.thermal_zones : Array(ThermalZone)`
+  `def self.thread_limits : ThreadLimits`
   `def self.usb_devices : Array(USBDevice)`
   `def self.users : Array(User)`
   `def self.wifi : Array(WiFi)`
 
 Records
 -------
+
+    record ArpEntry,
+      ip         : String,
+      hw_type    : String,
+      flags      : String,
+      hw_address : String,
+      mask       : String,
+      device     : String
+
+    record BlockDevice,
+      name       : String,
+      model      : String,
+      size_bytes : UInt64,
+      rotational : Bool
 
     record CPU,
       model_name     : String,
@@ -76,6 +96,7 @@ Records
       base_mhz       : Float64,
       cache_kb       : Int32,
       core_mhz       : Array(Float64),
+      core_governors : Array(String),
       thermal_zones  : Array(ThermalZone)
   
     record CPUStats,
@@ -83,16 +104,16 @@ Records
       cores : Array(CPUTimes)
   
     record CPUTimes,
-      user    : UInt64,
-      nice    : UInt64,
-      system  : UInt64,
-      idle    : UInt64,
-      iowait  : UInt64,
-      irq     : UInt64,
-      softirq : UInt64,
-      steal   : UInt64 do
+      user           : UInt64,
+      nice           : UInt64,
+      system         : UInt64,
+      idle           : UInt64,
+      iowait         : UInt64,
+      irq            : UInt64,
+      softirq        : UInt64,
+      steal          : UInt64 do
       def idle_total : UInt64
-      def total : UInt64
+      def total      : UInt64
       def usage_since(previous : CPUTimes) : Float64
     end
   
@@ -109,6 +130,12 @@ Records
       connected  : Bool,
       resolution : String,
       dpms_state : String
+
+    record FileDescriptorLimits,
+      allocated : UInt64,
+      maximum   : UInt64 do
+      def used  : UInt64
+    end
   
     record Filesystem,
       total_bytes     : UInt64,
@@ -126,10 +153,10 @@ Records
       core_mhz      : Float64
   
     record Host,
-      virtual_machine : String?,
-      container       : String? do
+      virtual_machine      : String?,
+      container            : String? do
       def virtual_machine? : Bool
-      def container? : Bool
+      def container?       : Bool
     end
   
     record HwmonChip,
@@ -204,22 +231,26 @@ Records
       class_id  : String
   
     record PowerSupply,
-      name             : String,
-      kind             : String,
-      status           : String,
-      present          : Bool,
-      online           : Bool?,
-      capacity_percent : Int32?,
-      energy_now_uwh   : Int64?,
-      energy_full_uwh  : Int64?,
-      power_now_uw     : Int64?,
-      voltage_now_uv   : Int64?,
-      charge_now_uah   : Int64?,
-      charge_full_uah  : Int64?,
-      current_now_ua   : Int64?,
-      time_remaining   : Time::Span? do
+      name                   : String,
+      kind                   : String,
+      status                 : String,
+      present                : Bool,
+      online                 : Bool?,
+      capacity_percent       : Int32?,
+      energy_now_uwh         : Int64?,
+      energy_full_uwh        : Int64?,
+      energy_full_design_uwh : Int64?,
+      power_now_uw           : Int64?,
+      voltage_now_uv         : Int64?,
+      charge_now_uah         : Int64?,
+      charge_full_uah        : Int64?,
+      charge_full_design_uah : Int64?,
+      current_now_ua         : Int64?,
+      cycle_count            : Int32?,
+      time_remaining         : Time::Span? do
       def charging? : Bool
       def discharging? : Bool
+      def health_percent : Int32?
     end
   
     record Pressure,
@@ -238,16 +269,34 @@ Records
     record Process,
       pid            : Int32,
       ppid           : Int32,
+      uid            : UInt32,
+      user           : String,
       name           : String,
+      cmdline        : Array(String),
       state          : Char,
       utime          : UInt64,
       stime          : UInt64,
       threads        : Int32,
       rss_bytes      : UInt64,
       vsize_bytes    : UInt64,
-      memory_percent : Float64 do
+      memory_percent : Float64,
+      exe            : String?,
+      cwd            : String? do
       def cpu_ticks : UInt64
     end
+
+    record Route,
+      destination : String,
+      gateway     : String,
+      flags       : Int32,
+      ref_count   : Int32,
+      use         : Int32,
+      metric      : Int32,
+      mask        : String,
+      mtu         : Int32,
+      window      : Int32,
+      irtt        : Int32,
+      interface   : String
   
     record Sensor,
       label : String,
@@ -261,10 +310,21 @@ Records
       remote_ip   : String,
       remote_port : Int32,
       state       : String
+
+    record SwapDevice,
+      path       : String,
+      kind       : String,
+      size_bytes : UInt64,
+      used_bytes : UInt64,
+      priority   : Int32
   
     record ThermalZone,
       kind    : String,
       celsius : Float64
+
+    record ThreadLimits,
+      pid_max     : UInt64,
+      threads_max : UInt64
   
     record USBDevice,
       vendor_id    : String,
@@ -295,6 +355,7 @@ Module Methods
   `def self.read_int(path : String) : Int64?`
   `def self.read_line(path : String) : String?`
   `def self.read_lines(path : String, & : String ->) : Bool`
+  `def self.readlink(path : String) : String?`
   `def self.string_from(bytes) : String`
 
 

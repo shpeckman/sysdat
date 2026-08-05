@@ -13,6 +13,7 @@ require "./sysdat/graphics"
 require "./sysdat/sensors"
 require "./sysdat/devices"
 require "./sysdat/host"
+require "./sysdat/limits"
 
 module Sysdat
   class Error < Exception
