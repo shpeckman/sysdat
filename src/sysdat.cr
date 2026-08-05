@@ -16,6 +16,8 @@ require "./sysdat/host"
 require "./sysdat/limits"
 
 module Sysdat
+  VERSION = {{ `shards version "#{__DIR__}"`.chomp.stringify }}
+
   class Error < Exception
   end
 
