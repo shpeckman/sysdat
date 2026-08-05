@@ -1,33 +1,21 @@
 # src/sysdat/devices.cr
 module Sysdat
-  struct USBDevice
-    getter vendor_id    : String
-    getter product_id   : String
-    getter manufacturer : String
-    getter product      : String
+  record USBDevice,
+    vendor_id    : String,
+    product_id   : String,
+    manufacturer : String,
+    product      : String
 
-    def initialize(@vendor_id, @product_id, @manufacturer, @product)
-    end
-  end
+  record PCIDevice,
+    address   : String,
+    vendor_id : String,
+    device_id : String,
+    class_id  : String
 
-  struct PCIDevice
-    getter address   : String
-    getter vendor_id : String
-    getter device_id : String
-    getter class_id  : String
-
-    def initialize(@address, @vendor_id, @device_id, @class_id)
-    end
-  end
-
-  struct KernelModule
-    getter name       : String
-    getter size_bytes : UInt64
-    getter ref_count  : UInt32
-
-    def initialize(@name, @size_bytes, @ref_count)
-    end
-  end
+  record KernelModule,
+    name       : String,
+    size_bytes : UInt64,
+    ref_count  : UInt32
 
   def self.usb_devices : Array(USBDevice)
     SysFS.children("/sys/bus/usb/devices").compact_map do |entry|

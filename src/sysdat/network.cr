@@ -13,31 +13,22 @@ module Sysdat
     {"/proc/net/udp6", "udp6", true},
   }
 
-  struct NetworkRate
-    getter rx_bytes_per_sec   : Float64
-    getter tx_bytes_per_sec   : Float64
-    getter rx_packets_per_sec : Float64
-    getter tx_packets_per_sec : Float64
+  record NetworkRate,
+    rx_bytes_per_sec   : Float64,
+    tx_bytes_per_sec   : Float64,
+    rx_packets_per_sec : Float64,
+    tx_packets_per_sec : Float64
 
-    def initialize(@rx_bytes_per_sec, @tx_bytes_per_sec, @rx_packets_per_sec, @tx_packets_per_sec)
-    end
-  end
-
-  struct NetworkInterface
-    getter name       : String
-    getter rx_bytes   : UInt64
-    getter rx_packets : UInt64
-    getter rx_errors  : UInt64
-    getter rx_dropped : UInt64
-    getter tx_bytes   : UInt64
-    getter tx_packets : UInt64
-    getter tx_errors  : UInt64
-    getter tx_dropped : UInt64
-
-    def initialize(@name, @rx_bytes, @rx_packets, @rx_errors, @rx_dropped,
-                   @tx_bytes, @tx_packets, @tx_errors, @tx_dropped)
-    end
-
+  record NetworkInterface,
+    name       : String,
+    rx_bytes   : UInt64,
+    rx_packets : UInt64,
+    rx_errors  : UInt64,
+    rx_dropped : UInt64,
+    tx_bytes   : UInt64,
+    tx_packets : UInt64,
+    tx_errors  : UInt64,
+    tx_dropped : UInt64 do
     def rate_since(previous : NetworkInterface, interval : Time::Span) : NetworkRate
       seconds = interval.total_seconds
       raise Error.new("interval must be positive") unless seconds > 0.0
@@ -55,27 +46,19 @@ module Sysdat
     end
   end
 
-  struct WiFi
-    getter name         : String
-    getter link_quality : Float64
-    getter signal_dbm   : Float64
-    getter noise_dbm    : Float64
+  record WiFi,
+    name         : String,
+    link_quality : Float64,
+    signal_dbm   : Float64,
+    noise_dbm    : Float64
 
-    def initialize(@name, @link_quality, @signal_dbm, @noise_dbm)
-    end
-  end
-
-  struct Socket
-    getter protocol    : String
-    getter local_ip    : String
-    getter local_port  : Int32
-    getter remote_ip   : String
-    getter remote_port : Int32
-    getter state       : String
-
-    def initialize(@protocol, @local_ip, @local_port, @remote_ip, @remote_port, @state)
-    end
-  end
+  record Socket,
+    protocol    : String,
+    local_ip    : String,
+    local_port  : Int32,
+    remote_ip   : String,
+    remote_port : Int32,
+    state       : String
 
   def self.interfaces : Array(NetworkInterface)
     interfaces = [] of NetworkInterface

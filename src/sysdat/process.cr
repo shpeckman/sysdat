@@ -6,22 +6,17 @@ module Sysdat
     PID
   end
 
-  struct Process
-    getter pid            : Int32
-    getter ppid           : Int32
-    getter name           : String
-    getter state          : Char
-    getter utime          : UInt64
-    getter stime          : UInt64
-    getter threads        : Int32
-    getter rss_bytes      : UInt64
-    getter vsize_bytes    : UInt64
-    getter memory_percent : Float64
-
-    def initialize(@pid, @ppid, @name, @state, @utime, @stime, @threads,
-                   @rss_bytes, @vsize_bytes, @memory_percent)
-    end
-
+  record Process,
+    pid            : Int32,
+    ppid           : Int32,
+    name           : String,
+    state          : Char,
+    utime          : UInt64,
+    stime          : UInt64,
+    threads        : Int32,
+    rss_bytes      : UInt64,
+    vsize_bytes    : UInt64,
+    memory_percent : Float64 do
     def cpu_ticks : UInt64
       utime + stime
     end

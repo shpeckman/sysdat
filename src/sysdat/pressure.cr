@@ -1,25 +1,17 @@
 # src/sysdat/pressure.cr
 module Sysdat
-  struct PressureMetric
-    getter avg10  : Float64
-    getter avg60  : Float64
-    getter avg300 : Float64
-    getter total  : Time::Span
+  record PressureMetric,
+    avg10  : Float64,
+    avg60  : Float64,
+    avg300 : Float64,
+    total  : Time::Span
 
-    def initialize(@avg10, @avg60, @avg300, @total)
-    end
-  end
-
-  struct Pressure
-    getter cpu_some    : PressureMetric?
-    getter memory_some : PressureMetric?
-    getter memory_full : PressureMetric?
-    getter io_some     : PressureMetric?
-    getter io_full     : PressureMetric?
-
-    def initialize(@cpu_some, @memory_some, @memory_full, @io_some, @io_full)
-    end
-  end
+  record Pressure,
+    cpu_some    : PressureMetric?,
+    memory_some : PressureMetric?,
+    memory_full : PressureMetric?,
+    io_some     : PressureMetric?,
+    io_full     : PressureMetric?
 
   def self.pressure : Pressure?
     cpu    = read_pressure("/proc/pressure/cpu")

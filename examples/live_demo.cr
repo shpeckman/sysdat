@@ -6,13 +6,13 @@ at_exit { print "\e[?25h" }
 
 previous_cpu = Sysdat.cpu_stats
 previous_net = Sysdat.interfaces
-last_time = Time.monotonic
+last_time    = Time.monotonic
 
 loop do
   sleep 1
 
   current_time = Time.monotonic
-  interval = current_time - last_time
+  interval     = current_time - last_time
 
   current_cpu = Sysdat.cpu_stats
   current_net = Sysdat.interfaces
@@ -40,7 +40,7 @@ loop do
   puts "" unless current_cpu.cores.size % 4 == 0
   puts ""
 
-  mem = Sysdat.memory
+  mem         = Sysdat.memory
   mem_percent = mem.total > 0 ? (mem.used.to_f / mem.total * 100).round(2) : 0.0
   puts "=== Memory ==="
   puts "Used:     #{mem.used // 1048576} MB / #{mem.total // 1048576} MB (#{mem_percent}%)"
@@ -51,11 +51,11 @@ loop do
   current_net.each do |iface|
     previous_iface = previous_net.find { |i| i.name == iface.name }
     next unless previous_iface
-    
-    rate = iface.rate_since(previous_iface, interval)
+
+    rate  = iface.rate_since(previous_iface, interval)
     rx_mb = (rate.rx_bytes_per_sec / 1_048_576).round(2)
     tx_mb = (rate.tx_bytes_per_sec / 1_048_576).round(2)
-    
+
     puts "#{iface.name.ljust(15)} | RX: #{rx_mb.to_s.rjust(6)} MB/s | TX: #{tx_mb.to_s.rjust(6)} MB/s"
   end
   puts ""
@@ -91,5 +91,5 @@ loop do
 
   previous_cpu = current_cpu
   previous_net = current_net
-  last_time = current_time
+  last_time    = current_time
 end

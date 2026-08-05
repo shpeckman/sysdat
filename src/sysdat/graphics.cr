@@ -6,27 +6,19 @@ module Sysdat
     "0x10de" => "NVIDIA",
   }
 
-  struct GPU
-    getter name          : String
-    getter vendor        : String
-    getter busy_percent  : Int32?
-    getter vram_total_mb : UInt64
-    getter vram_used_mb  : UInt64
-    getter core_mhz      : Float64
+  record GPU,
+    name          : String,
+    vendor        : String,
+    busy_percent  : Int32?,
+    vram_total_mb : UInt64,
+    vram_used_mb  : UInt64,
+    core_mhz      : Float64
 
-    def initialize(@name, @vendor, @busy_percent, @vram_total_mb, @vram_used_mb, @core_mhz)
-    end
-  end
-
-  struct Display
-    getter name       : String
-    getter connected  : Bool
-    getter resolution : String
-    getter dpms_state : String
-
-    def initialize(@name, @connected, @resolution, @dpms_state)
-    end
-  end
+  record Display,
+    name       : String,
+    connected  : Bool,
+    resolution : String,
+    dpms_state : String
 
   def self.gpus : Array(GPU)
     SysFS.children("/sys/class/drm").compact_map do |entry|

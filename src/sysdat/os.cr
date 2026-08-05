@@ -1,20 +1,15 @@
 # src/sysdat/os.cr
 module Sysdat
-  struct OS
-    getter sysname           : String
-    getter release           : String
-    getter version           : String
-    getter machine           : String
-    getter hostname          : String
-    getter uptime            : Time::Span
-    getter load_average      : Tuple(Float64, Float64, Float64)
-    getter processes_total   : Int32
-    getter processes_running : Int32
-
-    def initialize(@sysname, @release, @version, @machine, @hostname, @uptime,
-                   @load_average, @processes_total, @processes_running)
-    end
-  end
+  record OS,
+    sysname           : String,
+    release           : String,
+    version           : String,
+    machine           : String,
+    hostname          : String,
+    uptime            : Time::Span,
+    load_average      : Tuple(Float64, Float64, Float64),
+    processes_total   : Int32,
+    processes_running : Int32
 
   def self.os : OS
     uts = uninitialized LibSys::UtsName

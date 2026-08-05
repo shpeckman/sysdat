@@ -1,26 +1,20 @@
 # src/sysdat/power.cr
 module Sysdat
-  struct PowerSupply
-    getter name             : String
-    getter kind             : String
-    getter status           : String
-    getter present          : Bool
-    getter online           : Bool?
-    getter capacity_percent : Int32?
-    getter energy_now_uwh   : Int64?
-    getter energy_full_uwh  : Int64?
-    getter power_now_uw     : Int64?
-    getter voltage_now_uv   : Int64?
-    getter charge_now_uah   : Int64?
-    getter charge_full_uah  : Int64?
-    getter current_now_ua   : Int64?
-    getter time_remaining   : Time::Span?
-
-    def initialize(@name, @kind, @status, @present, @online, @capacity_percent,
-                   @energy_now_uwh, @energy_full_uwh, @power_now_uw, @voltage_now_uv,
-                   @charge_now_uah, @charge_full_uah, @current_now_ua, @time_remaining)
-    end
-
+  record PowerSupply,
+    name             : String,
+    kind             : String,
+    status           : String,
+    present          : Bool,
+    online           : Bool?,
+    capacity_percent : Int32?,
+    energy_now_uwh   : Int64?,
+    energy_full_uwh  : Int64?,
+    power_now_uw     : Int64?,
+    voltage_now_uv   : Int64?,
+    charge_now_uah   : Int64?,
+    charge_full_uah  : Int64?,
+    current_now_ua   : Int64?,
+    time_remaining   : Time::Span? do
     def charging? : Bool
       status == "Charging"
     end

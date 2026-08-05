@@ -15,22 +15,14 @@ module Sysdat
   HWMON_SENSOR_LIMIT = 10
   HWMON_PROBE_FLOOR  =  5
 
-  struct Sensor
-    getter label : String
-    getter kind  : SensorKind
-    getter value : Float64
+  record Sensor,
+    label : String,
+    kind  : SensorKind,
+    value : Float64
 
-    def initialize(@label, @kind, @value)
-    end
-  end
-
-  struct HwmonChip
-    getter name    : String
-    getter sensors : Array(Sensor)
-
-    def initialize(@name, @sensors)
-    end
-  end
+  record HwmonChip,
+    name    : String,
+    sensors : Array(Sensor)
 
   def self.hwmon : Array(HwmonChip)
     SysFS.children("/sys/class/hwmon").compact_map do |entry|

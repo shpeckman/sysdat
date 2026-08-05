@@ -14,30 +14,22 @@ module Sysdat
     {"kubepods", "Kubernetes"},
   }
 
-  struct Host
-    getter virtual_machine : String?
-    getter container       : String?
-
-    def initialize(@virtual_machine, @container)
-    end
-
+  record Host,
+    virtual_machine : String?,
+    container       : String? do
     def virtual_machine? : Bool
-      !@virtual_machine.nil?
+      !virtual_machine.nil?
     end
 
     def container? : Bool
-      !@container.nil?
+      !container.nil?
     end
   end
 
-  struct User
-    getter name       : String
-    getter tty        : String
-    getter login_time : Time
-
-    def initialize(@name, @tty, @login_time)
-    end
-  end
+  record User,
+    name       : String,
+    tty        : String,
+    login_time : Time
 
   def self.host : Host
     product = SysFS.read_line("/sys/class/dmi/id/product_name") || ""

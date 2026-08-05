@@ -1,41 +1,28 @@
 # src/sysdat/cpu.cr
 module Sysdat
-  struct ThermalZone
-    getter kind    : String
-    getter celsius : Float64
+  record ThermalZone,
+    kind    : String,
+    celsius : Float64
 
-    def initialize(@kind, @celsius)
-    end
-  end
+  record CPU,
+    model_name     : String,
+    flags          : Array(String),
+    logical_cores  : Int32,
+    physical_cores : Int32,
+    base_mhz       : Float64,
+    cache_kb       : Int32,
+    core_mhz       : Array(Float64),
+    thermal_zones  : Array(ThermalZone)
 
-  struct CPU
-    getter model_name     : String
-    getter flags          : Array(String)
-    getter logical_cores  : Int32
-    getter physical_cores : Int32
-    getter base_mhz       : Float64
-    getter cache_kb       : Int32
-    getter core_mhz       : Array(Float64)
-    getter thermal_zones  : Array(ThermalZone)
-
-    def initialize(@model_name, @flags, @logical_cores, @physical_cores, @base_mhz,
-                   @cache_kb, @core_mhz, @thermal_zones)
-    end
-  end
-
-  struct CPUTimes
-    getter user    : UInt64
-    getter nice    : UInt64
-    getter system  : UInt64
-    getter idle    : UInt64
-    getter iowait  : UInt64
-    getter irq     : UInt64
-    getter softirq : UInt64
-    getter steal   : UInt64
-
-    def initialize(@user, @nice, @system, @idle, @iowait, @irq, @softirq, @steal)
-    end
-
+  record CPUTimes,
+    user    : UInt64,
+    nice    : UInt64,
+    system  : UInt64,
+    idle    : UInt64,
+    iowait  : UInt64,
+    irq     : UInt64,
+    softirq : UInt64,
+    steal   : UInt64 do
     def idle_total : UInt64
       idle + iowait
     end
@@ -52,13 +39,9 @@ module Sysdat
     end
   end
 
-  struct CPUStats
-    getter total : CPUTimes
-    getter cores : Array(CPUTimes)
-
-    def initialize(@total, @cores)
-    end
-  end
+  record CPUStats,
+    total : CPUTimes,
+    cores : Array(CPUTimes)
 
   def self.cpu : CPU
     model_name       = ""

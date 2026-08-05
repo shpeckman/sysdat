@@ -7,41 +7,28 @@ module Sysdat
 
   SECTOR_SIZE = 512_u64
 
-  struct Filesystem
-    getter total_bytes     : UInt64
-    getter free_bytes      : UInt64
-    getter available_bytes : UInt64
-    getter inodes_total    : UInt64
-    getter inodes_free     : UInt64
+  record Filesystem,
+    total_bytes     : UInt64,
+    free_bytes      : UInt64,
+    available_bytes : UInt64,
+    inodes_total    : UInt64,
+    inodes_free     : UInt64
 
-    def initialize(@total_bytes, @free_bytes, @available_bytes, @inodes_total, @inodes_free)
-    end
-  end
+  record Mount,
+    device          : String,
+    mount_point     : String,
+    fs_type         : String,
+    total_bytes     : UInt64,
+    free_bytes      : UInt64,
+    available_bytes : UInt64
 
-  struct Mount
-    getter device          : String
-    getter mount_point     : String
-    getter fs_type         : String
-    getter total_bytes     : UInt64
-    getter free_bytes      : UInt64
-    getter available_bytes : UInt64
-
-    def initialize(@device, @mount_point, @fs_type, @total_bytes, @free_bytes, @available_bytes)
-    end
-  end
-
-  struct DiskIO
-    getter device           : String
-    getter reads_completed  : UInt64
-    getter writes_completed : UInt64
-    getter bytes_read       : UInt64
-    getter bytes_written    : UInt64
-    getter io_ticks         : UInt64
-
-    def initialize(@device, @reads_completed, @writes_completed, @bytes_read,
-                   @bytes_written, @io_ticks)
-    end
-  end
+  record DiskIO,
+    device           : String,
+    reads_completed  : UInt64,
+    writes_completed : UInt64,
+    bytes_read       : UInt64,
+    bytes_written    : UInt64,
+    io_ticks         : UInt64
 
   def self.filesystem(path : String) : Filesystem?
     stat = uninitialized LibSys::StatVFS
