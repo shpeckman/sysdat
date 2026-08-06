@@ -17,6 +17,8 @@ module Sysdat
   record Host,
     virtual_machine : String?,
     container       : String? do
+    include JSON::Serializable
+
     def virtual_machine? : Bool
       !virtual_machine.nil?
     end
@@ -29,7 +31,9 @@ module Sysdat
   record User,
     name       : String,
     tty        : String,
-    login_time : Time
+    login_time : Time do
+    include JSON::Serializable
+  end
 
   def self.host : Host
     product = SysFS.read_line("/sys/class/dmi/id/product_name") || ""

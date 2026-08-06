@@ -6,6 +6,14 @@ module Sysdat
     PID
   end
 
+  record ProcessIO,
+    read_chars  : UInt64,
+    write_chars : UInt64,
+    read_bytes  : UInt64,
+    write_bytes : UInt64 do
+    include JSON::Serializable
+  end
+
   record Process,
     pid            : Int32,
     ppid           : Int32,
@@ -17,17 +25,21 @@ module Sysdat
     utime          : UInt64,
     stime          : UInt64,
     threads        : Int32,
+    fd_count       : UInt32,
     rss_bytes      : UInt64,
     vsize_bytes    : UInt64,
     memory_percent : Float64,
+    io             : ProcessIO?,
     exe            : String?,
     cwd            : String? do
+    include JSON::Serializable
+
     def cpu_ticks : UInt64
       utime + stime
     end
   end
 
-  def self.processes(sort : ProcessSort = ProcessSort::CPU, limit : Int32? = nil) : Array(Process)
+  def self.processes(sort : ProcessSort = ProcessSort::CPU, limit : Int32? = nil, io : Bool = false) : Array(Process)
     page_size = self.page_size
     total_memory = begin
       memory.total
@@ -44,7 +56,7 @@ module Sysdat
         next unless pid && pid > 0
 
         begin
-          if process = read_process(pid, page_size, total_memory, user_cache)
+          if process = read_process(pid, page_size, total_memory, user_cache, io)
             processes << process
           end
         rescue IO::Error
@@ -84,7 +96,7 @@ module Sysdat
     cache
   end
 
-  private def self.read_process(pid : Int32, page_size : UInt64, total_memory : UInt64, user_cache : Hash(UInt32, String)) : Process?
+  private def self.read_process(pid : Int32, page_size : UInt64, total_memory : UInt64, user_cache : Hash(UInt32, String), want_io : Bool) : Process?
     content = SysFS.read_all("/proc/#{pid}/stat")
     return nil unless content
 
@@ -122,11 +134,30 @@ module Sysdat
       utime: fields[11].to_u64? || 0_u64,
       stime: fields[12].to_u64? || 0_u64,
       threads: fields[17].to_i? || 0,
+      fd_count: SysFS.count_children("/proc/#{pid}/fd"),
       rss_bytes: rss_bytes,
       vsize_bytes: fields[20].to_u64? || 0_u64,
       memory_percent: total_memory > 0 ? 100.0 * rss_bytes / total_memory : 0.0,
+      io: want_io ? read_process_io(pid) : nil,
       exe: SysFS.readlink("/proc/#{pid}/exe"),
       cwd: SysFS.readlink("/proc/#{pid}/cwd"),
+    )
+  end
+
+  private def self.read_process_io(pid : Int32) : ProcessIO?
+    values = Hash(String, UInt64).new(0_u64)
+    found = SysFS.read_lines("/proc/#{pid}/io") do |line|
+      key, separator, rest = line.partition(':')
+      next if separator.empty?
+      values[key] = rest.strip.to_u64? || 0_u64
+    end
+    return nil unless found
+
+    ProcessIO.new(
+      read_chars: values["rchar"],
+      write_chars: values["wchar"],
+      read_bytes: values["read_bytes"],
+      write_bytes: values["write_bytes"],
     )
   end
 end

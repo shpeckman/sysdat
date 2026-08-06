@@ -12,13 +12,17 @@ module Sysdat
     busy_percent  : Int32?,
     vram_total_mb : UInt64,
     vram_used_mb  : UInt64,
-    core_mhz      : Float64
+    core_mhz      : Float64 do
+    include JSON::Serializable
+  end
 
   record Display,
     name       : String,
     connected  : Bool,
     resolution : String,
-    dpms_state : String
+    dpms_state : String do
+    include JSON::Serializable
+  end
 
   def self.gpus : Array(GPU)
     SysFS.children("/sys/class/drm").compact_map do |entry|

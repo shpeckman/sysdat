@@ -6,14 +6,14 @@ at_exit { print "\e[?25h" }
 
 previous_cpu = Sysdat.cpu_stats
 previous_net = Sysdat.interfaces
-last_time    = Time.monotonic
-start_time   = Time.monotonic
+last_time    = Time.instant
+start_time   = Time.instant
 
 # Run for 20 seconds
-while (Time.monotonic - start_time).total_seconds < 20
-  sleep 1
+while (Time.instant - start_time).total_seconds < 20
+  sleep 1.second
 
-  current_time = Time.monotonic
+  current_time = Time.instant
   interval     = current_time - last_time
 
   current_cpu = Sysdat.cpu_stats

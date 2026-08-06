@@ -12,15 +12,24 @@ module Sysdat
     free_bytes      : UInt64,
     available_bytes : UInt64,
     inodes_total    : UInt64,
-    inodes_free     : UInt64
+    inodes_free     : UInt64 do
+    include JSON::Serializable
+  end
 
   record Mount,
     device          : String,
     mount_point     : String,
     fs_type         : String,
+    options         : Array(String),
     total_bytes     : UInt64,
     free_bytes      : UInt64,
-    available_bytes : UInt64
+    available_bytes : UInt64 do
+    include JSON::Serializable
+
+    def read_only? : Bool
+      options.includes?("ro")
+    end
+  end
 
   record DiskIO,
     device           : String,
@@ -28,20 +37,35 @@ module Sysdat
     writes_completed : UInt64,
     bytes_read       : UInt64,
     bytes_written    : UInt64,
-    io_ticks         : UInt64
+    io_ticks         : UInt64 do
+    include JSON::Serializable
+  end
+
+  record Partition,
+    name       : String,
+    size_bytes : UInt64 do
+    include JSON::Serializable
+  end
 
   record BlockDevice,
     name       : String,
     model      : String,
+    serial     : String,
     size_bytes : UInt64,
-    rotational : Bool
+    rotational : Bool,
+    scheduler  : String,
+    partitions : Array(Partition) do
+    include JSON::Serializable
+  end
 
   record SwapDevice,
     path       : String,
     kind       : String,
     size_bytes : UInt64,
     used_bytes : UInt64,
-    priority   : Int32
+    priority   : Int32 do
+    include JSON::Serializable
+  end
 
   def self.filesystem(path : String) : Filesystem?
     stat = uninitialized LibSys::StatVFS
@@ -62,7 +86,7 @@ module Sysdat
 
     SysFS.read_lines("/proc/mounts") do |line|
       fields = line.split
-      next if fields.size < 3
+      next if fields.size < 4
 
       device, mount_point, fs_type = fields[0], fields[1], fields[2]
       next unless device.starts_with?('/') || POOLED_FS_TYPES.includes?(fs_type)
@@ -73,6 +97,7 @@ module Sysdat
         device: device,
         mount_point: mount_point,
         fs_type: fs_type,
+        options: fields[3].split(','),
         total_bytes: usage.try(&.total_bytes) || 0_u64,
         free_bytes: usage.try(&.free_bytes) || 0_u64,
         available_bytes: usage.try(&.available_bytes) || 0_u64,
@@ -118,8 +143,11 @@ module Sysdat
       devices << BlockDevice.new(
         name: entry,
         model: SysFS.read_line("#{base}/device/model").try(&.strip) || "Unknown",
+        serial: SysFS.read_line("#{base}/device/serial").try(&.strip) || "",
         size_bytes: size_sectors.to_u64 * SECTOR_SIZE,
-        rotational: rotational
+        rotational: rotational,
+        scheduler: Parsers.parse_scheduler(SysFS.read_line("#{base}/queue/scheduler")),
+        partitions: read_partitions(base, entry),
       )
     end
 
@@ -147,5 +175,23 @@ module Sysdat
     end
 
     devices
+  end
+
+  private def self.read_partitions(base : String, device : String) : Array(Partition)
+    partitions = [] of Partition
+
+    SysFS.children(base).each do |entry|
+      next unless entry.starts_with?(device)
+      part_base = "#{base}/#{entry}"
+      next unless File.exists?("#{part_base}/partition")
+
+      size_sectors = SysFS.read_int("#{part_base}/size") || 0_i64
+      partitions << Partition.new(
+        name: entry,
+        size_bytes: size_sectors.to_u64 * SECTOR_SIZE,
+      )
+    end
+
+    partitions
   end
 end

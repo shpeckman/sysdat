@@ -4,18 +4,24 @@ module Sysdat
     vendor_id    : String,
     product_id   : String,
     manufacturer : String,
-    product      : String
+    product      : String do
+    include JSON::Serializable
+  end
 
   record PCIDevice,
     address   : String,
     vendor_id : String,
     device_id : String,
-    class_id  : String
+    class_id  : String do
+    include JSON::Serializable
+  end
 
   record KernelModule,
     name       : String,
     size_bytes : UInt64,
-    ref_count  : UInt32
+    ref_count  : UInt32 do
+    include JSON::Serializable
+  end
 
   def self.usb_devices : Array(USBDevice)
     SysFS.children("/sys/bus/usb/devices").compact_map do |entry|

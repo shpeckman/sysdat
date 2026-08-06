@@ -9,7 +9,15 @@ module Sysdat
     uptime            : Time::Span,
     load_average      : Tuple(Float64, Float64, Float64),
     processes_total   : Int32,
-    processes_running : Int32
+    processes_running : Int32 do
+    include JSON::Serializable
+
+    @[JSON::Field(converter: Sysdat::SpanConverter)]
+    @uptime : Time::Span
+
+    @[JSON::Field(converter: Sysdat::LoadAverageConverter)]
+    @load_average : Tuple(Float64, Float64, Float64)
+  end
 
   def self.os : OS
     uts = uninitialized LibSys::UtsName

@@ -18,11 +18,15 @@ module Sysdat
   record Sensor,
     label : String,
     kind  : SensorKind,
-    value : Float64
+    value : Float64 do
+    include JSON::Serializable
+  end
 
   record HwmonChip,
     name    : String,
-    sensors : Array(Sensor)
+    sensors : Array(Sensor) do
+    include JSON::Serializable
+  end
 
   def self.hwmon : Array(HwmonChip)
     SysFS.children("/sys/class/hwmon").compact_map do |entry|

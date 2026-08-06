@@ -18,6 +18,11 @@ module Sysdat
     current_now_ua         : Int64?,
     cycle_count            : Int32?,
     time_remaining         : Time::Span? do
+    include JSON::Serializable
+
+    @[JSON::Field(converter: Sysdat::NilableSpanConverter)]
+    @time_remaining : Time::Span?
+
     def charging? : Bool
       status == "Charging"
     end

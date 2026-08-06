@@ -53,10 +53,45 @@ lib LibSys
     ut_reserved : StaticArray(UInt8, 20)
   end
 
+  AF_INET  =  2
+  AF_INET6 = 10
+
+  struct Sockaddr
+    sa_family : LibC::UShort
+    sa_data   : StaticArray(UInt8, 14)
+  end
+
+  struct SockaddrIn
+    sin_family : LibC::UShort
+    sin_port   : UInt16
+    sin_addr   : StaticArray(UInt8, 4)
+    sin_zero   : StaticArray(UInt8, 8)
+  end
+
+  struct SockaddrIn6
+    sin6_family   : LibC::UShort
+    sin6_port     : UInt16
+    sin6_flowinfo : UInt32
+    sin6_addr     : StaticArray(UInt8, 16)
+    sin6_scope_id : UInt32
+  end
+
+  struct Ifaddrs
+    ifa_next    : Ifaddrs*
+    ifa_name    : LibC::Char*
+    ifa_flags   : LibC::UInt
+    ifa_addr    : LibSys::Sockaddr*
+    ifa_netmask : LibSys::Sockaddr*
+    ifa_ifu     : LibSys::Sockaddr*
+    ifa_data    : Void*
+  end
+
   fun statvfs(path : LibC::Char*, buffer : StatVFS*) : LibC::Int
   fun sysconf(name : LibC::Int) : LibC::Long
   fun uname(buffer : UtsName*) : LibC::Int
   fun setutent : Void
   fun getutent : Utmp*
   fun endutent : Void
+  fun getifaddrs(ifap : Ifaddrs**) : LibC::Int
+  fun freeifaddrs(ifa : Ifaddrs*) : Void
 end

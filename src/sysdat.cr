@@ -1,6 +1,9 @@
 # src/sysdat.cr
+require "./sysdat/serialization"
 require "./sysdat/lib_sys"
 require "./sysdat/sys_fs"
+require "./sysdat/parsers"
+require "./sysdat/format"
 require "./sysdat/os"
 require "./sysdat/cpu"
 require "./sysdat/memory"
@@ -14,6 +17,7 @@ require "./sysdat/sensors"
 require "./sysdat/devices"
 require "./sysdat/host"
 require "./sysdat/limits"
+require "./sysdat/snapshot"
 
 module Sysdat
   VERSION = {{ `shards version "#{__DIR__}"`.chomp.stringify }}

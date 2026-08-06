@@ -4,14 +4,21 @@ module Sysdat
     avg10  : Float64,
     avg60  : Float64,
     avg300 : Float64,
-    total  : Time::Span
+    total  : Time::Span do
+    include JSON::Serializable
+
+    @[JSON::Field(converter: Sysdat::SpanConverter)]
+    @total : Time::Span
+  end
 
   record Pressure,
     cpu_some    : PressureMetric?,
     memory_some : PressureMetric?,
     memory_full : PressureMetric?,
     io_some     : PressureMetric?,
-    io_full     : PressureMetric?
+    io_full     : PressureMetric? do
+    include JSON::Serializable
+  end
 
   def self.pressure : Pressure?
     cpu    = read_pressure("/proc/pressure/cpu")

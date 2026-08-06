@@ -42,6 +42,14 @@ module Sysdat
       [] of String
     end
 
+    def count_children(path : String) : UInt32
+      count = 0_u32
+      Dir.each_child(path) { count += 1 }
+      count
+    rescue IO::Error
+      0_u32
+    end
+
     def string_from(bytes) : String
       slice  = bytes.to_slice
       length = slice.index(0_u8) || slice.size
