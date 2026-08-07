@@ -1,5 +1,5 @@
 # src/sysdat/collectors/network.cr
-module Sysdat
+module Sysdat::Network
   TCP_STATES = %w[
     UNKNOWN ESTABLISHED SYN_SENT SYN_RECV FIN_WAIT1
     FIN_WAIT2 TIME_WAIT CLOSE CLOSE_WAIT LAST_ACK
@@ -13,7 +13,7 @@ module Sysdat
     {"/proc/net/udp6", "udp6", true},
   }
 
-  record NetworkRate,
+  record Rate,
     rx_bytes_per_sec   : Float64,
     tx_bytes_per_sec   : Float64,
     rx_packets_per_sec : Float64,
@@ -27,7 +27,7 @@ module Sysdat
     include JSON::Serializable
   end
 
-  record NetworkInterface,
+  record Interface,
     name        : String,
     mac_address : String,
     operstate   : String,
@@ -48,11 +48,11 @@ module Sysdat
       operstate == "up"
     end
 
-    def rate_since(previous : NetworkInterface, interval : Time::Span) : NetworkRate
+    def rate_since(previous : Interface, interval : Time::Span) : Rate
       seconds = interval.total_seconds
       raise Error.new("interval must be positive") unless seconds > 0.0
 
-      NetworkRate.new(
+      Rate.new(
         rx_bytes_per_sec: delta(rx_bytes, previous.rx_bytes) / seconds,
         tx_bytes_per_sec: delta(tx_bytes, previous.tx_bytes) / seconds,
         rx_packets_per_sec: delta(rx_packets, previous.rx_packets) / seconds,
@@ -111,96 +111,99 @@ module Sysdat
     include JSON::Serializable
   end
 
-  class NetworkSampler
-    @previous : Hash(String, NetworkInterface)
-    @last     : Time::Span
+  class InterfacesCollector
+    include Sysdat::Collector(Array(Interface))
 
-    def initialize
-      @previous = index_interfaces(Sysdat.interfaces)
-      @last     = Time.instant
-    end
+    def collect : Array(Interface)
+      interfaces = [] of Interface
+      addresses  = Network.interface_addresses
 
-    def sample : Hash(String, NetworkRate)
-      now      = Time.instant
-      interval = now - @last
-      current  = Sysdat.interfaces
-      rates    = {} of String => NetworkRate
+      SysFS.read_lines("/proc/net/dev") do |line|
+        name, separator, rest = line.partition(':')
+        next if separator.empty?
 
-      if interval.total_seconds > 0.0
-        current.each do |iface|
-          if previous = @previous[iface.name]?
-            rates[iface.name] = iface.rate_since(previous, interval)
-          end
-        end
+        name   = name.strip
+        fields = rest.split
+        next if fields.size < 16
+
+        values = fields.first(16).map { |field| field.to_u64? || 0_u64 }
+        base   = "/sys/class/net/#{name}"
+
+        interfaces << Interface.new(
+          name: name,
+          mac_address: SysFS.read_line("#{base}/address") || "",
+          operstate: SysFS.read_line("#{base}/operstate") || "unknown",
+          mtu: (SysFS.read_int("#{base}/mtu") || 0_i64).to_i32,
+          speed_mbps: (SysFS.read_int("#{base}/speed") || -1_i64).to_i32,
+          addresses: addresses[name]? || [] of InterfaceAddress,
+          rx_bytes: values[0],
+          rx_packets: values[1],
+          rx_errors: values[2],
+          rx_dropped: values[3],
+          tx_bytes: values[8],
+          tx_packets: values[9],
+          tx_errors: values[10],
+          tx_dropped: values[11],
+        )
       end
 
-      @previous = index_interfaces(current)
-      @last     = now
-      rates
-    end
-
-    private def index_interfaces(interfaces : Array(NetworkInterface)) : Hash(String, NetworkInterface)
-      indexed = {} of String => NetworkInterface
-      interfaces.each { |iface| indexed[iface.name] = iface }
-      indexed
+      interfaces
     end
   end
 
-  def self.interfaces : Array(NetworkInterface)
-    interfaces = [] of NetworkInterface
-    addresses  = interface_addresses
+  class WiFiCollector
+    include Sysdat::Collector(Array(WiFi))
 
-    SysFS.read_lines("/proc/net/dev") do |line|
-      name, separator, rest = line.partition(':')
-      next if separator.empty?
+    def collect : Array(WiFi)
+      devices = [] of WiFi
 
-      name   = name.strip
-      fields = rest.split
-      next if fields.size < 16
+      SysFS.read_lines("/proc/net/wireless") do |line|
+        name, separator, rest = line.partition(':')
+        next if separator.empty?
 
-      values = fields.first(16).map { |field| field.to_u64? || 0_u64 }
-      base   = "/sys/class/net/#{name}"
+        fields = rest.split
+        next if fields.size < 4
 
-      interfaces << NetworkInterface.new(
-        name: name,
-        mac_address: SysFS.read_line("#{base}/address") || "",
-        operstate: SysFS.read_line("#{base}/operstate") || "unknown",
-        mtu: (SysFS.read_int("#{base}/mtu") || 0_i64).to_i32,
-        speed_mbps: (SysFS.read_int("#{base}/speed") || -1_i64).to_i32,
-        addresses: addresses[name]? || [] of InterfaceAddress,
-        rx_bytes: values[0],
-        rx_packets: values[1],
-        rx_errors: values[2],
-        rx_dropped: values[3],
-        tx_bytes: values[8],
-        tx_packets: values[9],
-        tx_errors: values[10],
-        tx_dropped: values[11],
-      )
+        devices << WiFi.new(
+          name: name.strip,
+          link_quality: Network.parse_wireless(fields[1]),
+          signal_dbm: Network.parse_wireless(fields[2]),
+          noise_dbm: Network.parse_wireless(fields[3]),
+        )
+      end
+
+      devices
     end
-
-    interfaces
   end
 
-  def self.wifi : Array(WiFi)
-    devices = [] of WiFi
+  class RoutesCollector
+    include Sysdat::Collector(Array(Route))
 
-    SysFS.read_lines("/proc/net/wireless") do |line|
-      name, separator, rest = line.partition(':')
-      next if separator.empty?
+    def collect : Array(Route)
+      routes = [] of Route
 
-      fields = rest.split
-      next if fields.size < 4
+      SysFS.read_lines("/proc/net/route") do |line|
+        next if line.starts_with?("Iface")
+        fields = line.split
+        next if fields.size < 11
 
-      devices << WiFi.new(
-        name: name.strip,
-        link_quality: parse_wireless(fields[1]),
-        signal_dbm: parse_wireless(fields[2]),
-        noise_dbm: parse_wireless(fields[3]),
-      )
+        routes << Route.new(
+          interface: fields[0],
+          destination: Parsers.decode_ipv4_hex(fields[1]),
+          gateway: Parsers.decode_ipv4_hex(fields[2]),
+          flags: fields[3].to_i?(16) || 0,
+          ref_count: fields[4].to_i? || 0,
+          use: fields[5].to_i? || 0,
+          metric: fields[6].to_i? || 0,
+          mask: Parsers.decode_ipv4_hex(fields[7]),
+          mtu: fields[8].to_i? || 0,
+          window: fields[9].to_i? || 0,
+          irtt: fields[10].to_i? || 0
+        )
+      end
+
+      routes
     end
-
-    devices
   end
 
   def self.sockets(resolve_process : Bool = false) : Array(Socket)
@@ -242,32 +245,6 @@ module Sysdat
     sockets
   end
 
-  def self.routes : Array(Route)
-    routes = [] of Route
-
-    SysFS.read_lines("/proc/net/route") do |line|
-      next if line.starts_with?("Iface")
-      fields = line.split
-      next if fields.size < 11
-
-      routes << Route.new(
-        interface: fields[0],
-        destination: Parsers.decode_ipv4_hex(fields[1]),
-        gateway: Parsers.decode_ipv4_hex(fields[2]),
-        flags: fields[3].to_i?(16) || 0,
-        ref_count: fields[4].to_i? || 0,
-        use: fields[5].to_i? || 0,
-        metric: fields[6].to_i? || 0,
-        mask: Parsers.decode_ipv4_hex(fields[7]),
-        mtu: fields[8].to_i? || 0,
-        window: fields[9].to_i? || 0,
-        irtt: fields[10].to_i? || 0
-      )
-    end
-
-    routes
-  end
-
   def self.arp_cache : Array(ArpEntry)
     entries = [] of ArpEntry
 
@@ -289,7 +266,7 @@ module Sysdat
     entries
   end
 
-  private def self.interface_addresses : Hash(String, Array(InterfaceAddress))
+  protected def self.interface_addresses : Hash(String, Array(InterfaceAddress))
     result = Hash(String, Array(InterfaceAddress)).new
 
     list = uninitialized LibSys::Ifaddrs*
@@ -325,7 +302,7 @@ module Sysdat
     result
   end
 
-  private def self.build_socket_inode_map : Hash(UInt64, Tuple(Int32, String))
+  protected def self.build_socket_inode_map : Hash(UInt64, Tuple(Int32, String))
     map = Hash(UInt64, Tuple(Int32, String)).new
 
     begin
@@ -354,7 +331,7 @@ module Sysdat
     map
   end
 
-  private def self.read_process_name(pid : Int32) : String
+  protected def self.read_process_name(pid : Int32) : String
     if content = SysFS.read_all("/proc/#{pid}/stat")
       open_paren  = content.index('(')
       close_paren = content.rindex(')')
@@ -365,15 +342,60 @@ module Sysdat
     pid.to_s
   end
 
-  private def self.parse_wireless(field : String) : Float64
+  protected def self.parse_wireless(field : String) : Float64
     field.to_f?(strict: false) || 0.0
   end
 
-  private def self.tcp_state(value : Int32) : String
+  protected def self.tcp_state(value : Int32) : String
     TCP_STATES[value]? || TCP_STATES[0]
   end
 
-  private def self.udp_state(value : Int32) : String
+  protected def self.udp_state(value : Int32) : String
     value == 7 ? "CLOSE" : "ACTIVE"
+  end
+
+  class Facade
+    def initialize(@system : Sysdat::System)
+    end
+
+    def interfaces : Array(Interface)
+      InterfacesCollector.new.collect
+    end
+
+    def wifi : Array(WiFi)
+      WiFiCollector.new.collect
+    end
+
+    def routes : Array(Route)
+      RoutesCollector.new.collect
+    end
+
+    def sockets(resolve_process : Bool = false) : Array(Socket)
+      Network.sockets(resolve_process)
+    end
+
+    def arp_cache : Array(ArpEntry)
+      Network.arp_cache
+    end
+
+    def sampler : Sysdat::Sampler(Array(Interface), Hash(String, Rate))
+      collector = InterfacesCollector.new
+      Sysdat::Sampler(Array(Interface), Hash(String, Rate)).new(
+        -> { collector.collect },
+        ->(previous : Array(Interface), current : Array(Interface), interval : Time::Span) {
+          rates = {} of String => Rate
+          if interval.total_seconds > 0.0
+            index = {} of String => Interface
+            previous.each { |iface| index[iface.name] = iface }
+            current.each do |iface|
+              if prev = index[iface.name]?
+                rates[iface.name] = iface.rate_since(prev, interval)
+              end
+            end
+          end
+          rates
+        }
+      )
+    end
   end
 end

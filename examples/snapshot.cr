@@ -1,7 +1,8 @@
 # examples/snapshot.cr
 require "../src/sysdat"
 
-snapshot = Sysdat.snapshot
+system   = Sysdat.open
+snapshot = system.snapshot
 
 puts "=== Snapshot Overview ==="
 puts "Captured:  #{snapshot.captured_at}"
@@ -21,7 +22,7 @@ end
 puts ""
 
 puts "=== CPU Sampler (1s window) ==="
-sampler = Sysdat::CPUSampler.new
+sampler = system.cpu.sampler
 sleep 1.second
 puts "Total usage: #{sampler.sample.round(2)}%"
 puts ""

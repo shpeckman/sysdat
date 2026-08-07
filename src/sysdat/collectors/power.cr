@@ -1,6 +1,6 @@
 # src/sysdat/collectors/power.cr
-module Sysdat
-  record PowerSupply,
+module Sysdat::Power
+  record Supply,
     name                   : String,
     kind                   : String,
     status                 : String,
@@ -42,11 +42,15 @@ module Sysdat
     end
   end
 
-  def self.power_supplies : Array(PowerSupply)
-    SysFS.children("/sys/class/power_supply").map { |name| read_power_supply(name) }
+  class Collector
+    include Sysdat::Collector(Array(Supply))
+
+    def collect : Array(Supply)
+      SysFS.children("/sys/class/power_supply").map { |name| Power.read_power_supply(name) }
+    end
   end
 
-  private def self.read_power_supply(name : String) : PowerSupply
+  protected def self.read_power_supply(name : String) : Supply
     base = "/sys/class/power_supply/#{name}"
 
     kind = SysFS.read_line("#{base}/type") || ""
@@ -102,10 +106,10 @@ module Sysdat
         remaining = charging ? (charge_full - charge_now).to_f : charge_now.to_f
       end
 
-      time_remaining = span_from_hours(remaining / rate) if rate > 0.0 && remaining > 0.0
+      time_remaining = Sysdat.span_from_hours(remaining / rate) if rate > 0.0 && remaining > 0.0
     end
 
-    PowerSupply.new(
+    Supply.new(
       name: name,
       kind: kind,
       status: status,
@@ -124,5 +128,14 @@ module Sysdat
       cycle_count: cycle_count,
       time_remaining: time_remaining,
     )
+  end
+
+  class Facade
+    def initialize(@system : Sysdat::System)
+    end
+
+    def supplies : Array(Supply)
+      Collector.new.collect
+    end
   end
 end

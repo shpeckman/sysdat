@@ -1,12 +1,12 @@
 # src/sysdat/collectors/process.cr
-module Sysdat
-  enum ProcessSort
+module Sysdat::Process
+  enum Sort
     CPU
     Memory
     PID
   end
 
-  record ProcessIO,
+  record IO,
     read_chars  : UInt64,
     write_chars : UInt64,
     read_bytes  : UInt64,
@@ -14,7 +14,7 @@ module Sysdat
     include JSON::Serializable
   end
 
-  record Process,
+  record Info,
     pid            : Int32,
     ppid           : Int32,
     uid            : UInt32,
@@ -29,7 +29,7 @@ module Sysdat
     rss_bytes      : UInt64,
     vsize_bytes    : UInt64,
     memory_percent : Float64,
-    io             : ProcessIO?,
+    io             : IO?,
     exe            : String?,
     cwd            : String? do
     include JSON::Serializable
@@ -39,52 +39,58 @@ module Sysdat
     end
   end
 
-  def self.processes(sort : ProcessSort = ProcessSort::CPU, limit : Int32? = nil, io : Bool = false) : Array(Process)
-    page_size = self.page_size
-    total_memory = begin
-      memory.total
-    rescue Error
-      0_u64
+  class Collector
+    include Sysdat::Collector(Array(Info))
+
+    def initialize(@sort : Sort = Sort::CPU, @limit : Int32? = nil, @io : Bool = false)
     end
 
-    user_cache = build_user_cache
-    processes  = [] of Process
-
-    begin
-      Dir.each_child("/proc") do |entry|
-        pid = entry.to_i?
-        next unless pid && pid > 0
-
-        begin
-          if process = read_process(pid, page_size, total_memory, user_cache, io)
-            processes << process
-          end
-        rescue IO::Error
-          # Ignore failures for individual processes (e.g., vanished mid-read or permission denied)
-        end
+    def collect : Array(Info)
+      page_size = Process.page_size
+      total_memory = begin
+        Memory::Collector.new.collect.total
+      rescue Error
+        0_u64
       end
-    rescue IO::Error
-      raise Error.new("/proc is unavailable")
-    end
 
-    case sort
-    in ProcessSort::CPU
-      processes.sort! { |a, b| b.cpu_ticks <=> a.cpu_ticks }
-    in ProcessSort::Memory
-      processes.sort! { |a, b| b.rss_bytes <=> a.rss_bytes }
-    in ProcessSort::PID
-      processes.sort_by!(&.pid)
-    end
+      user_cache = Process.build_user_cache
+      processes  = [] of Info
 
-    limit ? processes.first(limit) : processes
+      begin
+        Dir.each_child("/proc") do |entry|
+          pid = entry.to_i?
+          next unless pid && pid > 0
+
+          begin
+            if process = Process.read_process(pid, page_size, total_memory, user_cache, @io)
+              processes << process
+            end
+          rescue ::IO::Error
+          end
+        end
+      rescue ::IO::Error
+        raise Error.new("/proc is unavailable")
+      end
+
+      case @sort
+      in Sort::CPU
+        processes.sort! { |a, b| b.cpu_ticks <=> a.cpu_ticks }
+      in Sort::Memory
+        processes.sort! { |a, b| b.rss_bytes <=> a.rss_bytes }
+      in Sort::PID
+        processes.sort_by!(&.pid)
+      end
+
+      @limit ? processes.first(@limit.not_nil!) : processes
+    end
   end
 
-  private def self.page_size : UInt64
+  protected def self.page_size : UInt64
     value = LibSys.sysconf(LibSys::SC_PAGESIZE)
     value > 0 ? value.to_u64 : 4096_u64
   end
 
-  private def self.build_user_cache : Hash(UInt32, String)
+  protected def self.build_user_cache : Hash(UInt32, String)
     cache = {} of UInt32 => String
     SysFS.read_lines("/etc/passwd") do |line|
       fields = line.split(':')
@@ -96,7 +102,7 @@ module Sysdat
     cache
   end
 
-  private def self.read_process(pid : Int32, page_size : UInt64, total_memory : UInt64, user_cache : Hash(UInt32, String), want_io : Bool) : Process?
+  protected def self.read_process(pid : Int32, page_size : UInt64, total_memory : UInt64, user_cache : Hash(UInt32, String), want_io : Bool) : Info?
     content = SysFS.read_all("/proc/#{pid}/stat")
     return nil unless content
 
@@ -123,7 +129,7 @@ module Sysdat
     cmdline_raw = SysFS.read_all("/proc/#{pid}/cmdline") || ""
     cmdline     = cmdline_raw.split('\0', remove_empty: true)
 
-    Process.new(
+    Info.new(
       pid: pid,
       ppid: fields[1].to_i? || 0,
       uid: uid,
@@ -144,7 +150,7 @@ module Sysdat
     )
   end
 
-  private def self.read_process_io(pid : Int32) : ProcessIO?
+  protected def self.read_process_io(pid : Int32) : IO?
     values = Hash(String, UInt64).new(0_u64)
     found = SysFS.read_lines("/proc/#{pid}/io") do |line|
       key, separator, rest = line.partition(':')
@@ -153,11 +159,20 @@ module Sysdat
     end
     return nil unless found
 
-    ProcessIO.new(
+    IO.new(
       read_chars: values["rchar"],
       write_chars: values["wchar"],
       read_bytes: values["read_bytes"],
       write_bytes: values["write_bytes"],
     )
+  end
+
+  class Facade
+    def initialize(@system : Sysdat::System)
+    end
+
+    def list(sort : Sort = Sort::CPU, limit : Int32? = nil, io : Bool = false) : Array(Info)
+      Collector.new(sort, limit, io).collect
+    end
   end
 end

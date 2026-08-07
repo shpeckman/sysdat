@@ -1,5 +1,6 @@
 # src/sysdat/collectors.cr
 require "./collectors/os"
+require "./collectors/kernel"
 require "./collectors/cpu"
 require "./collectors/memory"
 require "./collectors/storage"

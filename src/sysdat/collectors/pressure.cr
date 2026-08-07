@@ -1,6 +1,6 @@
 # src/sysdat/collectors/pressure.cr
-module Sysdat
-  record PressureMetric,
+module Sysdat::Pressure
+  record Metric,
     avg10  : Float64,
     avg60  : Float64,
     avg300 : Float64,
@@ -11,32 +11,36 @@ module Sysdat
     @total : Time::Span
   end
 
-  record Pressure,
-    cpu_some    : PressureMetric?,
-    memory_some : PressureMetric?,
-    memory_full : PressureMetric?,
-    io_some     : PressureMetric?,
-    io_full     : PressureMetric? do
+  record Info,
+    cpu_some    : Metric?,
+    memory_some : Metric?,
+    memory_full : Metric?,
+    io_some     : Metric?,
+    io_full     : Metric? do
     include JSON::Serializable
   end
 
-  def self.pressure : Pressure?
-    cpu    = read_pressure("/proc/pressure/cpu")
-    memory = read_pressure("/proc/pressure/memory")
-    io     = read_pressure("/proc/pressure/io")
-    return nil if cpu.empty? && memory.empty? && io.empty?
+  class Collector
+    include Sysdat::Collector(Info?)
 
-    Pressure.new(
-      cpu_some: cpu["some"]?,
-      memory_some: memory["some"]?,
-      memory_full: memory["full"]?,
-      io_some: io["some"]?,
-      io_full: io["full"]?,
-    )
+    def collect : Info?
+      cpu    = Pressure.read_pressure("/proc/pressure/cpu")
+      memory = Pressure.read_pressure("/proc/pressure/memory")
+      io     = Pressure.read_pressure("/proc/pressure/io")
+      return nil if cpu.empty? && memory.empty? && io.empty?
+
+      Info.new(
+        cpu_some: cpu["some"]?,
+        memory_some: memory["some"]?,
+        memory_full: memory["full"]?,
+        io_some: io["some"]?,
+        io_full: io["full"]?,
+      )
+    end
   end
 
-  private def self.read_pressure(path : String) : Hash(String, PressureMetric)
-    metrics = {} of String => PressureMetric
+  protected def self.read_pressure(path : String) : Hash(String, Metric)
+    metrics = {} of String => Metric
 
     SysFS.read_lines(path) do |line|
       fields = line.split
@@ -52,14 +56,23 @@ module Sysdat
         values[key] = value.to_f?(strict: false) || 0.0
       end
 
-      metrics[scope] = PressureMetric.new(
+      metrics[scope] = Metric.new(
         avg10: values["avg10"],
         avg60: values["avg60"],
         avg300: values["avg300"],
-        total: span_from_nanoseconds((values["total"] * 1_000.0).to_i64),
+        total: Sysdat.span_from_nanoseconds((values["total"] * 1_000.0).to_i64),
       )
     end
 
     metrics
+  end
+
+  class Facade
+    def initialize(@system : Sysdat::System)
+    end
+
+    def read : Info?
+      Collector.new.collect
+    end
   end
 end

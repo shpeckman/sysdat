@@ -1,15 +1,15 @@
 # src/sysdat/collectors/sensors.cr
-module Sysdat
-  enum SensorKind
+module Sysdat::Sensors
+  enum Kind
     Temperature
     Fan
     Voltage
   end
 
   HWMON_SENSORS = {
-    {SensorKind::Temperature, "temp", "Temp",    1000.0},
-    {SensorKind::Fan,         "fan",  "Fan",     1.0},
-    {SensorKind::Voltage,     "in",   "Voltage", 1000.0},
+    {Kind::Temperature, "temp", "Temp",    1000.0},
+    {Kind::Fan,         "fan",  "Fan",     1.0},
+    {Kind::Voltage,     "in",   "Voltage", 1000.0},
   }
 
   HWMON_SENSOR_LIMIT = 10
@@ -17,30 +17,34 @@ module Sysdat
 
   record Sensor,
     label : String,
-    kind  : SensorKind,
+    kind  : Kind,
     value : Float64 do
     include JSON::Serializable
   end
 
-  record HwmonChip,
+  record Chip,
     name    : String,
     sensors : Array(Sensor) do
     include JSON::Serializable
   end
 
-  def self.hwmon : Array(HwmonChip)
-    SysFS.children("/sys/class/hwmon").compact_map do |entry|
-      next unless entry.starts_with?("hwmon")
+  class Collector
+    include Sysdat::Collector(Array(Chip))
 
-      base    = "/sys/class/hwmon/#{entry}"
-      sensors = read_hwmon_sensors(base)
-      next if sensors.empty?
+    def collect : Array(Chip)
+      SysFS.children("/sys/class/hwmon").compact_map do |entry|
+        next unless entry.starts_with?("hwmon")
 
-      HwmonChip.new(name: SysFS.read_line("#{base}/name") || entry, sensors: sensors)
+        base    = "/sys/class/hwmon/#{entry}"
+        sensors = Sensors.read_hwmon_sensors(base)
+        next if sensors.empty?
+
+        Chip.new(name: SysFS.read_line("#{base}/name") || entry, sensors: sensors)
+      end
     end
   end
 
-  private def self.read_hwmon_sensors(base : String) : Array(Sensor)
+  protected def self.read_hwmon_sensors(base : String) : Array(Sensor)
     sensors = [] of Sensor
 
     (1..HWMON_SENSOR_LIMIT).each do |index|
@@ -62,5 +66,14 @@ module Sysdat
     end
 
     sensors
+  end
+
+  class Facade
+    def initialize(@system : Sysdat::System)
+    end
+
+    def hwmon : Array(Chip)
+      Collector.new.collect
+    end
   end
 end

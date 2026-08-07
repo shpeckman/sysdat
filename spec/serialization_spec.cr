@@ -52,9 +52,9 @@ describe "Sysdat serialization" do
     end
   end
 
-  describe "Sysdat.snapshot" do
+  describe "Sysdat::System#snapshot" do
     it "produces JSON that deserializes back into an equivalent snapshot" do
-      snapshot = Sysdat.snapshot
+      snapshot = Sysdat.open.snapshot
       json     = snapshot.to_json
       restored = Sysdat::Snapshot.from_json(json)
 

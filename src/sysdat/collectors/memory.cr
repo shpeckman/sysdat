@@ -1,6 +1,6 @@
 # src/sysdat/collectors/memory.cr
-module Sysdat
-  record Memory,
+module Sysdat::Memory
+  record Info,
     total            : UInt64,
     free             : UInt64,
     available        : UInt64,
@@ -33,42 +33,55 @@ module Sysdat
     end
   end
 
-  def self.memory : Memory
-    values = Hash(String, UInt64).new(0_u64)
+  class Collector
+    include Sysdat::Collector(Info)
 
-    available = SysFS.read_lines("/proc/meminfo") do |line|
-      key, separator, rest = line.partition(':')
-      next if separator.empty?
-      rest   = rest.strip
-      amount = rest.to_u64?(strict: false)
-      next unless amount
-      amount *= 1024 if rest.ends_with?("kB")
-      values[key] = amount
+    def collect : Info
+      values = Hash(String, UInt64).new(0_u64)
+
+      available = SysFS.read_lines("/proc/meminfo") do |line|
+        key, separator, rest = line.partition(':')
+        next if separator.empty?
+        rest   = rest.strip
+        amount = rest.to_u64?(strict: false)
+        next unless amount
+        amount *= 1024 if rest.ends_with?("kB")
+        values[key] = amount
+      end
+      raise Error.new("/proc/meminfo is unavailable") unless available
+
+      Info.new(
+        total: values["MemTotal"],
+        free: values["MemFree"],
+        available: values["MemAvailable"],
+        buffers: values["Buffers"],
+        cached: values["Cached"],
+        swap_total: values["SwapTotal"],
+        swap_free: values["SwapFree"],
+        swap_cached: values["SwapCached"],
+        active: values["Active"],
+        inactive: values["Inactive"],
+        dirty: values["Dirty"],
+        writeback: values["Writeback"],
+        mapped: values["Mapped"],
+        shmem: values["Shmem"],
+        slab: values["Slab"],
+        slab_reclaimable: values["SReclaimable"],
+        commit_limit: values["CommitLimit"],
+        committed_as: values["Committed_AS"],
+        hugepages_total: values["HugePages_Total"],
+        hugepages_free: values["HugePages_Free"],
+        hugepage_size: values["Hugepagesize"],
+      )
     end
-    raise Error.new("/proc/meminfo is unavailable") unless available
+  end
 
-    Memory.new(
-      total: values["MemTotal"],
-      free: values["MemFree"],
-      available: values["MemAvailable"],
-      buffers: values["Buffers"],
-      cached: values["Cached"],
-      swap_total: values["SwapTotal"],
-      swap_free: values["SwapFree"],
-      swap_cached: values["SwapCached"],
-      active: values["Active"],
-      inactive: values["Inactive"],
-      dirty: values["Dirty"],
-      writeback: values["Writeback"],
-      mapped: values["Mapped"],
-      shmem: values["Shmem"],
-      slab: values["Slab"],
-      slab_reclaimable: values["SReclaimable"],
-      commit_limit: values["CommitLimit"],
-      committed_as: values["Committed_AS"],
-      hugepages_total: values["HugePages_Total"],
-      hugepages_free: values["HugePages_Free"],
-      hugepage_size: values["Hugepagesize"],
-    )
+  class Facade
+    def initialize(@system : Sysdat::System)
+    end
+
+    def read : Info
+      Collector.new.collect
+    end
   end
 end

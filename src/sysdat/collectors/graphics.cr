@@ -1,5 +1,5 @@
 # src/sysdat/collectors/graphics.cr
-module Sysdat
+module Sysdat::Graphics
   GPU_VENDORS = {
     "0x8086" => "Intel",
     "0x1002" => "AMD",
@@ -24,44 +24,65 @@ module Sysdat
     include JSON::Serializable
   end
 
-  def self.gpus : Array(GPU)
-    SysFS.children("/sys/class/drm").compact_map do |entry|
-      next unless entry.starts_with?("card") && !entry.includes?('-')
+  class GPUsCollector
+    include Sysdat::Collector(Array(GPU))
 
-      base      = "/sys/class/drm/#{entry}"
-      vendor_id = SysFS.read_line("#{base}/device/vendor").try(&.strip.downcase)
+    def collect : Array(GPU)
+      SysFS.children("/sys/class/drm").compact_map do |entry|
+        next unless entry.starts_with?("card") && !entry.includes?('-')
 
-      GPU.new(
-        name: entry,
-        vendor: vendor_id.try { |id| GPU_VENDORS[id]? } || "Unknown",
-        busy_percent: SysFS.read_int("#{base}/device/gpu_busy_percent").try(&.to_i32),
-        vram_total_mb: megabytes(SysFS.read_int("#{base}/device/mem_info_vram_total")),
-        vram_used_mb: megabytes(SysFS.read_int("#{base}/device/mem_info_vram_used")),
-        core_mhz: SysFS.read_int("#{base}/gt_cur_freq_mhz").try(&.to_f) || 0.0,
-      )
+        base      = "/sys/class/drm/#{entry}"
+        vendor_id = SysFS.read_line("#{base}/device/vendor").try(&.strip.downcase)
+
+        GPU.new(
+          name: entry,
+          vendor: vendor_id.try { |id| GPU_VENDORS[id]? } || "Unknown",
+          busy_percent: SysFS.read_int("#{base}/device/gpu_busy_percent").try(&.to_i32),
+          vram_total_mb: Graphics.megabytes(SysFS.read_int("#{base}/device/mem_info_vram_total")),
+          vram_used_mb: Graphics.megabytes(SysFS.read_int("#{base}/device/mem_info_vram_used")),
+          core_mhz: SysFS.read_int("#{base}/gt_cur_freq_mhz").try(&.to_f) || 0.0,
+        )
+      end
     end
   end
 
-  def self.displays : Array(Display)
-    SysFS.children("/sys/class/drm").compact_map do |entry|
-      next unless entry.starts_with?("card")
+  class DisplaysCollector
+    include Sysdat::Collector(Array(Display))
 
-      _, separator, connector = entry.partition('-')
-      next if separator.empty?
+    def collect : Array(Display)
+      SysFS.children("/sys/class/drm").compact_map do |entry|
+        next unless entry.starts_with?("card")
 
-      base      = "/sys/class/drm/#{entry}"
-      connected = SysFS.read_line("#{base}/status") == "connected"
+        _, separator, connector = entry.partition('-')
+        next if separator.empty?
 
-      Display.new(
-        name: connector,
-        connected: connected,
-        resolution: (connected ? SysFS.read_line("#{base}/modes") : nil) || "",
-        dpms_state: (connected ? SysFS.read_line("#{base}/dpms") : nil) || "",
-      )
+        base      = "/sys/class/drm/#{entry}"
+        connected = SysFS.read_line("#{base}/status") == "connected"
+
+        Display.new(
+          name: connector,
+          connected: connected,
+          resolution: (connected ? SysFS.read_line("#{base}/modes") : nil) || "",
+          dpms_state: (connected ? SysFS.read_line("#{base}/dpms") : nil) || "",
+        )
+      end
     end
   end
 
-  private def self.megabytes(bytes : Int64?) : UInt64
+  protected def self.megabytes(bytes : Int64?) : UInt64
     bytes && bytes > 0 ? (bytes // (1024 * 1024)).to_u64 : 0_u64
+  end
+
+  class Facade
+    def initialize(@system : Sysdat::System)
+    end
+
+    def gpus : Array(GPU)
+      GPUsCollector.new.collect
+    end
+
+    def displays : Array(Display)
+      DisplaysCollector.new.collect
+    end
   end
 end

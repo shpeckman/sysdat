@@ -70,7 +70,7 @@ module Sysdat::Parsers
     end
   end
 
-  def parse_cpu_times(fields : Array(String)) : CPUTimes
+  def parse_cpu_times(fields : Array(String)) : CPU::Times
     values = StaticArray(UInt64, 8).new(0_u64)
     fields.each_with_index do |field, index|
       break if index > 8
@@ -78,7 +78,7 @@ module Sysdat::Parsers
       values[index - 1] = field.to_u64? || 0_u64
     end
 
-    CPUTimes.new(values[0], values[1], values[2], values[3],
+    CPU::Times.new(values[0], values[1], values[2], values[3],
       values[4], values[5], values[6], values[7])
   end
 

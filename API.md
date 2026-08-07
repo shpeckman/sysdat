@@ -1,202 +1,192 @@
 MODULE: Sysdat
 ==============
 
+Entry Point
+-----------
+
+  The public surface is the `System` handle, obtained with `Sysdat.open`.
+  Every collector is reached through a namespaced sub-facade on that handle
+  (`system.cpu`, `system.network`, ...). There are no top-level collector
+  methods on `Sysdat` itself.
+
+    system = Sysdat.open           # => Sysdat::System
+
+    system.cpu.info                # Sysdat::CPU::Info
+    system.cpu.stats               # Sysdat::CPU::Stats
+    system.memory.read             # Sysdat::Memory::Info
+    system.network.interfaces      # Array(Sysdat::Network::Interface)
+    system.process.list(limit: 10) # Array(Sysdat::Process::Info)
+    system.snapshot                # Sysdat::Snapshot
+
 Exceptions
 ----------
 
   `class Error < Exception`
 
-Enums
------
-
-    enum ProcessSort
-      CPU
-      Memory
-      PID
-    end
-  
-    enum SensorKind
-      Temperature
-      Fan
-      Voltage
-    end
-
-Constants
----------
-
-  `POOLED_FS_TYPES : Tuple(String, String)`
-  `SKIPPED_FS_TYPES : Tuple(String, String)`
-  `IGNORED_BLOCK_PREFIXES : Tuple(String, String)`
-  `SECTOR_SIZE : UInt64`
-  `TCP_STATES : Array(String)`
-  `SOCKET_SOURCES : Tuple(Tuple(String, String, Bool), Tuple(String, String, Bool), Tuple(String, String, Bool), Tuple(String, String, Bool))`
-  `GPU_VENDORS : Hash(String, String)`
-  `HWMON_SENSORS : Tuple(Tuple(SensorKind, String, String, Float64), Tuple(SensorKind, String, String, Float64), Tuple(SensorKind, String, String, Float64))`
-  `HWMON_SENSOR_LIMIT : Int32`
-  `HWMON_PROBE_FLOOR : Int32`
-  `VM_PRODUCT_MARKERS : Tuple(String, String, String, String)`
-  `VM_VENDOR_MARKERS : Tuple(String)`
-  `CONTAINER_FILES : Tuple(Tuple(String, String), Tuple(String, String))`
-  `CONTAINER_CGROUP_MARKERS : Tuple(Tuple(String, String), Tuple(String, String), Tuple(String, String))`
-
-Serialization
--------------
-
-  All records include `JSON::Serializable`. A whole-system `Snapshot` (see
-  `Sysdat.snapshot`) or any individual record can be written with `#to_json`
-  and reconstructed with `.from_json`. `Time::Span` fields serialize as integer
-  nanoseconds, `Time` fields as RFC 3339 strings, and `OS#load_average` as a
-  three-element JSON array, via the converters below.
-
 Module Methods
 --------------
 
-  `def self.arp_cache : Array(ArpEntry)`
-  `def self.block_devices : Array(BlockDevice)`
-  `def self.cpu : CPU`
-  `def self.cpu_stats : CPUStats`
-  `def self.disk_io : Array(DiskIO)`
-  `def self.displays : Array(Display)`
-  `def self.file_descriptors : FileDescriptorLimits`
-  `def self.filesystem(path : String) : Filesystem?`
-  `def self.gpus : Array(GPU)`
-  `def self.host : Host`
-  `def self.hwmon : Array(HwmonChip)`
-  `def self.interfaces : Array(NetworkInterface)`
+  `def self.open : System`
+  `def self.span_from_nanoseconds(total : Int64) : Time::Span`
+  `def self.span_from_hours(hours : Float64) : Time::Span?`
+
+
+CLASS: Sysdat::System
+=====================
+
+  The central handle. Sub-facades are built lazily on first access and cached.
+
+Sub-Facades
+-----------
+
+  `def os : OS::Facade`
+  `def cpu : CPU::Facade`
+  `def kernel : Kernel::Facade`
+  `def memory : Memory::Facade`
+  `def storage : Storage::Facade`
+  `def network : Network::Facade`
+  `def process : Process::Facade`
+  `def power : Power::Facade`
+  `def pressure : Pressure::Facade`
+  `def graphics : Graphics::Facade`
+  `def sensors : Sensors::Facade`
+  `def devices : Devices::Facade`
+  `def host : Host::Facade`
+  `def limits : Limits::Facade`
+
+Aggregation
+-----------
+
+  `def snapshot : Snapshot`
+
+
+The Collector Abstraction
+=========================
+
+  Every non-parameterized collection is performed by a class that includes
+  the generic `Sysdat::Collector(T)` module and implements `collect : T`.
+  Facades wrap these collectors; `snapshot` drives them. Parameterized queries
+  (`Process`, `Network#sockets`, `Storage#filesystem`) are ordinary facade
+  methods and are intentionally NOT part of this contract.
+
+    module Sysdat::Collector(T)
+      abstract def collect : T
+    end
+
+  Collector classes, by namespace:
+
+    OS::Collector                    -> OS::Info
+    Kernel::StatsCollector           -> Kernel::Stats
+    Kernel::InfoCollector            -> Kernel::Info
+    CPU::InfoCollector               -> CPU::Info
+    CPU::StatsCollector              -> CPU::Stats
+    Memory::Collector                -> Memory::Info
+    Storage::MountsCollector         -> Array(Storage::Mount)
+    Storage::DiskIOCollector         -> Array(Storage::DiskIO)
+    Storage::BlockDevicesCollector   -> Array(Storage::BlockDevice)
+    Storage::SwapsCollector          -> Array(Storage::SwapDevice)
+    Network::InterfacesCollector     -> Array(Network::Interface)
+    Network::WiFiCollector           -> Array(Network::WiFi)
+    Network::RoutesCollector         -> Array(Network::Route)
+    Process::Collector               -> Array(Process::Info)
+    Power::Collector                 -> Array(Power::Supply)
+    Pressure::Collector              -> Pressure::Info?
+    Graphics::GPUsCollector          -> Array(Graphics::GPU)
+    Graphics::DisplaysCollector      -> Array(Graphics::Display)
+    Sensors::Collector               -> Array(Sensors::Chip)
+    Devices::USBCollector            -> Array(Devices::USB)
+    Devices::PCICollector            -> Array(Devices::PCI)
+    Devices::KernelModulesCollector  -> Array(Devices::KernelModule)
+    Host::Collector                  -> Host::Info
+    Limits::FileDescriptorsCollector -> Limits::FileDescriptors
+    Limits::ThreadsCollector         -> Limits::Threads
+
+  `Process::Collector` is the one collector taking construction arguments,
+  since `Process::Facade#list` forwards them:
+
+    Process::Collector.new(sort : Process::Sort = Process::Sort::CPU,
+                           limit : Int32? = nil,
+                           io : Bool = false)
+
+
+The Sampler Abstraction
+=======================
+
+  A single generic sampler replaces the former `CPUSampler` and
+  `NetworkSampler`. It holds a previous reading plus a monotonic timestamp,
+  and on each `sample` reads again, computes a rate from
+  `(previous, current, interval)`, then stores the new reading.
+
+    class Sysdat::Sampler(Reading, Rate)
+      def initialize(read : -> Reading,
+                     rate : (Reading, Reading, Time::Span) -> Rate)
+      def initialize(previous : Reading,
+                     read : -> Reading,
+                     rate : (Reading, Reading, Time::Span) -> Rate)
+      def sample : Rate
+    end
+
+  Configured samplers are handed out by facades:
+
+    system.cpu.sampler        # => Sampler(CPU::Stats, Float64)
+    system.cpu.core_sampler   # => Sampler(CPU::Stats, Array(Float64))
+    system.network.sampler    # => Sampler(Array(Network::Interface), Hash(String, Network::Rate))
+
+
+Serialization
+=============
+
+  All records include `JSON::Serializable`. A whole-system `Snapshot` (see
+  `System#snapshot`) or any individual record can be written with `#to_json`
+  and reconstructed with `.from_json`. `Time::Span` fields serialize as integer
+  nanoseconds, `Time` fields as RFC 3339 strings (except `Kernel::Stats#boot_time`,
+  which uses `Time::EpochConverter`), and `OS::Info#load_average` as a
+  three-element JSON array, via the converters below.
+
+
+NAMESPACE: Sysdat::OS
+=====================
+
+  `class Facade`
+    `def info : Info`
+
+    record Info,
+      sysname           : String,
+      release           : String,
+      version           : String,
+      machine           : String,
+      hostname          : String,
+      uptime            : Time::Span,
+      load_average      : Tuple(Float64, Float64, Float64),
+      processes_total   : Int32,
+      processes_running : Int32
+
+
+NAMESPACE: Sysdat::Kernel
+=========================
+
+  `class Facade`
+    `def info : Info`
+    `def stats : Stats`
+    `def interrupts : Array(Interrupt)`
+
   `def self.interrupts : Array(Interrupt)`
-  `def self.kernel_info : KernelInfo`
-  `def self.kernel_modules : Array(KernelModule)`
-  `def self.kernel_stats : KernelStats`
-  `def self.memory : Memory`
-  `def self.mounts : Array(Mount)`
-  `def self.os : OS`
-  `def self.pci_devices : Array(PCIDevice)`
-  `def self.power_supplies : Array(PowerSupply)`
-  `def self.pressure : Pressure?`
-  `def self.processes(sort : ProcessSort = ProcessSort::CPU, limit : Int32? = nil, io : Bool = false) : Array(Process)`
-  `def self.routes : Array(Route)`
-  `def self.snapshot : Snapshot`
-  `def self.sockets(resolve_process : Bool = false) : Array(Socket)`
-  `def self.swaps : Array(SwapDevice)`
-  `def self.thermal_zones : Array(ThermalZone)`
-  `def self.thread_limits : ThreadLimits`
-  `def self.usb_devices : Array(USBDevice)`
-  `def self.users : Array(User)`
-  `def self.wifi : Array(WiFi)`
 
-Samplers
---------
+    record Info,
+      command_line  : String,
+      entropy_avail : UInt64,
+      pid_max       : UInt64,
+      threads_max   : UInt64,
+      overcommit    : Int32,
+      swappiness    : Int32
 
-    class CPUSampler
-      def initialize
-      def initialize(previous : CPUStats)
-      def sample : Float64
-      def sample_per_core : Array(Float64)
-    end
-  
-    class NetworkSampler
-      def initialize
-      def sample : Hash(String, NetworkRate)
-    end
-
-Records
--------
-
-    record ArpEntry,
-      ip         : String,
-      hw_type    : String,
-      flags      : String,
-      hw_address : String,
-      mask       : String,
-      device     : String
-
-    record BlockDevice,
-      name       : String,
-      model      : String,
-      serial     : String,
-      size_bytes : UInt64,
-      rotational : Bool,
-      scheduler  : String,
-      partitions : Array(Partition)
-
-    record CPU,
-      model_name     : String,
-      flags          : Array(String),
-      logical_cores  : Int32,
-      physical_cores : Int32,
-      base_mhz       : Float64,
-      cache_kb       : Int32,
-      core_mhz       : Array(Float64),
-      core_governors : Array(String),
-      thermal_zones  : Array(ThermalZone)
-  
-    record CPUStats,
-      total : CPUTimes,
-      cores : Array(CPUTimes)
-  
-    record CPUTimes,
-      user           : UInt64,
-      nice           : UInt64,
-      system         : UInt64,
-      idle           : UInt64,
-      iowait         : UInt64,
-      irq            : UInt64,
-      softirq        : UInt64,
-      steal          : UInt64 do
-      def idle_total : UInt64
-      def total      : UInt64
-      def usage_since(previous : CPUTimes) : Float64
-    end
-  
-    record DiskIO,
-      device           : String,
-      reads_completed  : UInt64,
-      writes_completed : UInt64,
-      bytes_read       : UInt64,
-      bytes_written    : UInt64,
-      io_ticks         : UInt64
-  
-    record Display,
-      name       : String,
-      connected  : Bool,
-      resolution : String,
-      dpms_state : String
-
-    record FileDescriptorLimits,
-      allocated : UInt64,
-      maximum   : UInt64 do
-      def used  : UInt64
-    end
-  
-    record Filesystem,
-      total_bytes     : UInt64,
-      free_bytes      : UInt64,
-      available_bytes : UInt64,
-      inodes_total    : UInt64,
-      inodes_free     : UInt64
-  
-    record GPU,
-      name          : String,
-      vendor        : String,
-      busy_percent  : Int32?,
-      vram_total_mb : UInt64,
-      vram_used_mb  : UInt64,
-      core_mhz      : Float64
-  
-    record Host,
-      virtual_machine      : String?,
-      container            : String? do
-      def virtual_machine? : Bool
-      def container?       : Bool
-    end
-  
-    record HwmonChip,
-      name    : String,
-      sensors : Array(Sensor)
-  
-    record InterfaceAddress,
-      family  : String,
-      address : String
+    record Stats,
+      boot_time        : Time,
+      context_switches : UInt64,
+      interrupts       : UInt64,
+      processes_forked : UInt64,
+      procs_running    : UInt64,
+      procs_blocked    : UInt64
 
     record Interrupt,
       irq    : String,
@@ -206,28 +196,60 @@ Records
       def total : UInt64
     end
 
-    record KernelInfo,
-      command_line  : String,
-      entropy_avail : UInt64,
-      pid_max       : UInt64,
-      threads_max   : UInt64,
-      overcommit    : Int32,
-      swappiness    : Int32
 
-    record KernelModule,
-      name       : String,
-      size_bytes : UInt64,
-      ref_count  : UInt32
+NAMESPACE: Sysdat::CPU
+======================
 
-    record KernelStats,
-      boot_time        : Time,
-      context_switches : UInt64,
-      interrupts       : UInt64,
-      processes_forked : UInt64,
-      procs_running    : UInt64,
-      procs_blocked    : UInt64
-  
-    record Memory,
+  `class Facade`
+    `def info : Info`
+    `def stats : Stats`
+    `def thermal_zones : Array(ThermalZone)`
+    `def sampler : Sysdat::Sampler(Stats, Float64)`
+    `def core_sampler : Sysdat::Sampler(Stats, Array(Float64))`
+
+  `def self.thermal_zones : Array(ThermalZone)`
+
+    record Info,
+      model_name     : String,
+      flags          : Array(String),
+      logical_cores  : Int32,
+      physical_cores : Int32,
+      base_mhz       : Float64,
+      cache_kb       : Int32,
+      core_mhz       : Array(Float64),
+      core_governors : Array(String),
+      thermal_zones  : Array(ThermalZone)
+
+    record Times,
+      user    : UInt64,
+      nice    : UInt64,
+      system  : UInt64,
+      idle    : UInt64,
+      iowait  : UInt64,
+      irq     : UInt64,
+      softirq : UInt64,
+      steal   : UInt64 do
+      def idle_total : UInt64
+      def total      : UInt64
+      def usage_since(previous : Times) : Float64
+    end
+
+    record Stats,
+      total : Times,
+      cores : Array(Times)
+
+    record ThermalZone,
+      kind    : String,
+      celsius : Float64
+
+
+NAMESPACE: Sysdat::Memory
+=========================
+
+  `class Facade`
+    `def read : Info`
+
+    record Info,
       total            : UInt64,
       free             : UInt64,
       available        : UInt64,
@@ -252,7 +274,38 @@ Records
       def used      : UInt64
       def swap_used : UInt64
     end
-  
+
+
+NAMESPACE: Sysdat::Storage
+==========================
+
+  `class Facade`
+    `def mounts : Array(Mount)`
+    `def disk_io : Array(DiskIO)`
+    `def block_devices : Array(BlockDevice)`
+    `def swaps : Array(SwapDevice)`
+    `def filesystem(path : String) : Filesystem?`
+
+  `def self.filesystem(path : String) : Filesystem?`
+
+Constants
+---------
+
+  `POOLED_FS_TYPES : Tuple(String, String)`
+  `SKIPPED_FS_TYPES : Tuple(String, String)`
+  `IGNORED_BLOCK_PREFIXES : Tuple(String, String)`
+  `SECTOR_SIZE : UInt64`
+
+Records
+-------
+
+    record Filesystem,
+      total_bytes     : UInt64,
+      free_bytes      : UInt64,
+      available_bytes : UInt64,
+      inodes_total    : UInt64,
+      inodes_free     : UInt64
+
     record Mount,
       device          : String,
       mount_point     : String,
@@ -263,8 +316,60 @@ Records
       available_bytes : UInt64 do
       def read_only? : Bool
     end
-  
-    record NetworkInterface,
+
+    record DiskIO,
+      device           : String,
+      reads_completed  : UInt64,
+      writes_completed : UInt64,
+      bytes_read       : UInt64,
+      bytes_written    : UInt64,
+      io_ticks         : UInt64
+
+    record Partition,
+      name       : String,
+      size_bytes : UInt64
+
+    record BlockDevice,
+      name       : String,
+      model      : String,
+      serial     : String,
+      size_bytes : UInt64,
+      rotational : Bool,
+      scheduler  : String,
+      partitions : Array(Partition)
+
+    record SwapDevice,
+      path       : String,
+      kind       : String,
+      size_bytes : UInt64,
+      used_bytes : UInt64,
+      priority   : Int32
+
+
+NAMESPACE: Sysdat::Network
+==========================
+
+  `class Facade`
+    `def interfaces : Array(Interface)`
+    `def wifi : Array(WiFi)`
+    `def routes : Array(Route)`
+    `def sockets(resolve_process : Bool = false) : Array(Socket)`
+    `def arp_cache : Array(ArpEntry)`
+    `def sampler : Sysdat::Sampler(Array(Interface), Hash(String, Rate))`
+
+  `def self.sockets(resolve_process : Bool = false) : Array(Socket)`
+  `def self.arp_cache : Array(ArpEntry)`
+
+Constants
+---------
+
+  `TCP_STATES : Array(String)`
+  `SOCKET_SOURCES : Tuple(Tuple(String, String, Bool), Tuple(String, String, Bool), Tuple(String, String, Bool), Tuple(String, String, Bool))`
+
+Records
+-------
+
+    record Interface,
       name        : String,
       mac_address : String,
       operstate   : String,
@@ -280,37 +385,115 @@ Records
       tx_errors   : UInt64,
       tx_dropped  : UInt64 do
       def up? : Bool
-      def rate_since(previous : NetworkInterface, interval : Time::Span) : NetworkRate
+      def rate_since(previous : Interface, interval : Time::Span) : Rate
     end
-  
-    record NetworkRate,
+
+    record InterfaceAddress,
+      family  : String,
+      address : String
+
+    record Rate,
       rx_bytes_per_sec   : Float64,
       tx_bytes_per_sec   : Float64,
       rx_packets_per_sec : Float64,
       tx_packets_per_sec : Float64
-  
-    record OS,
-      sysname           : String,
-      release           : String,
-      version           : String,
-      machine           : String,
-      hostname          : String,
-      uptime            : Time::Span,
-      load_average      : Tuple(Float64, Float64, Float64),
-      processes_total   : Int32,
-      processes_running : Int32
-  
-    record Partition,
-      name       : String,
-      size_bytes : UInt64
 
-    record PCIDevice,
-      address   : String,
-      vendor_id : String,
-      device_id : String,
-      class_id  : String
-  
-    record PowerSupply,
+    record WiFi,
+      name         : String,
+      link_quality : Float64,
+      signal_dbm   : Float64,
+      noise_dbm    : Float64
+
+    record Socket,
+      protocol    : String,
+      local_ip    : String,
+      local_port  : Int32,
+      remote_ip   : String,
+      remote_port : Int32,
+      state       : String,
+      inode       : UInt64,
+      pid         : Int32?,
+      process     : String?
+
+    record Route,
+      destination : String,
+      gateway     : String,
+      flags       : Int32,
+      ref_count   : Int32,
+      use         : Int32,
+      metric      : Int32,
+      mask        : String,
+      mtu         : Int32,
+      window      : Int32,
+      irtt        : Int32,
+      interface   : String
+
+    record ArpEntry,
+      ip         : String,
+      hw_type    : String,
+      flags      : String,
+      hw_address : String,
+      mask       : String,
+      device     : String
+
+
+NAMESPACE: Sysdat::Process
+==========================
+
+  `class Facade`
+    `def list(sort : Sort = Sort::CPU, limit : Int32? = nil, io : Bool = false) : Array(Info)`
+
+Enums
+-----
+
+    enum Sort
+      CPU
+      Memory
+      PID
+    end
+
+Records
+-------
+
+    record Info,
+      pid            : Int32,
+      ppid           : Int32,
+      uid            : UInt32,
+      user           : String,
+      name           : String,
+      cmdline        : Array(String),
+      state          : Char,
+      utime          : UInt64,
+      stime          : UInt64,
+      threads        : Int32,
+      fd_count       : UInt32,
+      rss_bytes      : UInt64,
+      vsize_bytes    : UInt64,
+      memory_percent : Float64,
+      io             : IO?,
+      exe            : String?,
+      cwd            : String? do
+      def cpu_ticks : UInt64
+    end
+
+    record IO,
+      read_chars  : UInt64,
+      write_chars : UInt64,
+      read_bytes  : UInt64,
+      write_bytes : UInt64
+
+  NOTE: `Sysdat::Process::IO` deliberately shadows the stdlib `IO` module
+  within the `Process` namespace. Reference the stdlib type as `::IO` inside
+  that scope.
+
+
+NAMESPACE: Sysdat::Power
+========================
+
+  `class Facade`
+    `def supplies : Array(Supply)`
+
+    record Supply,
       name                   : String,
       kind                   : String,
       status                 : String,
@@ -328,135 +511,203 @@ Records
       current_now_ua         : Int64?,
       cycle_count            : Int32?,
       time_remaining         : Time::Span? do
-      def charging? : Bool
-      def discharging? : Bool
+      def charging?      : Bool
+      def discharging?   : Bool
       def health_percent : Int32?
     end
-  
-    record Pressure,
-      cpu_some    : PressureMetric?,
-      memory_some : PressureMetric?,
-      memory_full : PressureMetric?,
-      io_some     : PressureMetric?,
-      io_full     : PressureMetric?
-  
-    record PressureMetric,
+
+
+NAMESPACE: Sysdat::Pressure
+===========================
+
+  `class Facade`
+    `def read : Info?`
+
+    record Info,
+      cpu_some    : Metric?,
+      memory_some : Metric?,
+      memory_full : Metric?,
+      io_some     : Metric?,
+      io_full     : Metric?
+
+    record Metric,
       avg10  : Float64,
       avg60  : Float64,
       avg300 : Float64,
       total  : Time::Span
-  
-    record Process,
-      pid            : Int32,
-      ppid           : Int32,
-      uid            : UInt32,
-      user           : String,
-      name           : String,
-      cmdline        : Array(String),
-      state          : Char,
-      utime          : UInt64,
-      stime          : UInt64,
-      threads        : Int32,
-      fd_count       : UInt32,
-      rss_bytes      : UInt64,
-      vsize_bytes    : UInt64,
-      memory_percent : Float64,
-      io             : ProcessIO?,
-      exe            : String?,
-      cwd            : String? do
-      def cpu_ticks : UInt64
+
+
+NAMESPACE: Sysdat::Graphics
+===========================
+
+  `class Facade`
+    `def gpus : Array(GPU)`
+    `def displays : Array(Display)`
+
+Constants
+---------
+
+  `GPU_VENDORS : Hash(String, String)`
+
+Records
+-------
+
+    record GPU,
+      name          : String,
+      vendor        : String,
+      busy_percent  : Int32?,
+      vram_total_mb : UInt64,
+      vram_used_mb  : UInt64,
+      core_mhz      : Float64
+
+    record Display,
+      name       : String,
+      connected  : Bool,
+      resolution : String,
+      dpms_state : String
+
+
+NAMESPACE: Sysdat::Sensors
+==========================
+
+  `class Facade`
+    `def hwmon : Array(Chip)`
+
+Enums
+-----
+
+    enum Kind
+      Temperature
+      Fan
+      Voltage
     end
 
-    record ProcessIO,
-      read_chars  : UInt64,
-      write_chars : UInt64,
-      read_bytes  : UInt64,
-      write_bytes : UInt64
+Constants
+---------
 
-    record Route,
-      destination : String,
-      gateway     : String,
-      flags       : Int32,
-      ref_count   : Int32,
-      use         : Int32,
-      metric      : Int32,
-      mask        : String,
-      mtu         : Int32,
-      window      : Int32,
-      irtt        : Int32,
-      interface   : String
-  
+  `HWMON_SENSORS : Tuple(Tuple(Kind, String, String, Float64), Tuple(Kind, String, String, Float64), Tuple(Kind, String, String, Float64))`
+  `HWMON_SENSOR_LIMIT : Int32`
+  `HWMON_PROBE_FLOOR : Int32`
+
+Records
+-------
+
+    record Chip,
+      name    : String,
+      sensors : Array(Sensor)
+
     record Sensor,
       label : String,
-      kind  : SensorKind,
+      kind  : Kind,
       value : Float64
-  
-    record Snapshot,
-      os               : OS,
-      kernel           : KernelInfo,
-      kernel_stats     : KernelStats,
-      cpu              : CPU,
-      cpu_stats        : CPUStats,
-      memory           : Memory,
-      pressure         : Pressure?,
-      mounts           : Array(Mount),
-      block_devices    : Array(BlockDevice),
-      disk_io          : Array(DiskIO),
-      swaps            : Array(SwapDevice),
-      interfaces       : Array(NetworkInterface),
-      wifi             : Array(WiFi),
-      routes           : Array(Route),
-      gpus             : Array(GPU),
-      displays         : Array(Display),
-      hwmon            : Array(HwmonChip),
-      power_supplies   : Array(PowerSupply),
-      host             : Host,
-      file_descriptors : FileDescriptorLimits,
-      thread_limits    : ThreadLimits,
-      captured_at      : Time
 
-    record Socket,
-      protocol    : String,
-      local_ip    : String,
-      local_port  : Int32,
-      remote_ip   : String,
-      remote_port : Int32,
-      state       : String,
-      inode       : UInt64,
-      pid         : Int32?,
-      process     : String?
 
-    record SwapDevice,
-      path       : String,
-      kind       : String,
-      size_bytes : UInt64,
-      used_bytes : UInt64,
-      priority   : Int32
-  
-    record ThermalZone,
-      kind    : String,
-      celsius : Float64
+NAMESPACE: Sysdat::Devices
+==========================
 
-    record ThreadLimits,
-      pid_max     : UInt64,
-      threads_max : UInt64
-  
-    record USBDevice,
+  `class Facade`
+    `def usb_devices : Array(USB)`
+    `def pci_devices : Array(PCI)`
+    `def kernel_modules : Array(KernelModule)`
+
+Records
+-------
+
+    record USB,
       vendor_id    : String,
       product_id   : String,
       manufacturer : String,
       product      : String
-  
+
+    record PCI,
+      address   : String,
+      vendor_id : String,
+      device_id : String,
+      class_id  : String
+
+    record KernelModule,
+      name       : String,
+      size_bytes : UInt64,
+      ref_count  : UInt32
+
+
+NAMESPACE: Sysdat::Host
+=======================
+
+  `class Facade`
+    `def info : Info`
+    `def users : Array(User)`
+
+  `def self.users : Array(User)`
+
+Constants
+---------
+
+  `VM_PRODUCT_MARKERS : Tuple(String, String, String, String)`
+  `VM_VENDOR_MARKERS : Tuple(String)`
+  `CONTAINER_FILES : Tuple(Tuple(String, String), Tuple(String, String))`
+  `CONTAINER_CGROUP_MARKERS : Tuple(Tuple(String, String), Tuple(String, String), Tuple(String, String))`
+
+Records
+-------
+
+    record Info,
+      virtual_machine      : String?,
+      container            : String? do
+      def virtual_machine? : Bool
+      def container?       : Bool
+    end
+
     record User,
       name       : String,
       tty        : String,
       login_time : Time
-  
-    record WiFi,
-      name         : String,
-      link_quality : Float64,
-      signal_dbm   : Float64,
-      noise_dbm    : Float64
+
+
+NAMESPACE: Sysdat::Limits
+=========================
+
+  `class Facade`
+    `def file_descriptors : FileDescriptors`
+    `def threads : Threads`
+
+    record FileDescriptors,
+      allocated : UInt64,
+      maximum   : UInt64 do
+      def used  : UInt64
+    end
+
+    record Threads,
+      pid_max     : UInt64,
+      threads_max : UInt64
+
+
+RECORD: Sysdat::Snapshot
+========================
+
+    record Snapshot,
+      os               : OS::Info,
+      kernel           : Kernel::Info,
+      kernel_stats     : Kernel::Stats,
+      cpu              : CPU::Info,
+      cpu_stats        : CPU::Stats,
+      memory           : Memory::Info,
+      pressure         : Pressure::Info?,
+      mounts           : Array(Storage::Mount),
+      block_devices    : Array(Storage::BlockDevice),
+      disk_io          : Array(Storage::DiskIO),
+      swaps            : Array(Storage::SwapDevice),
+      interfaces       : Array(Network::Interface),
+      wifi             : Array(Network::WiFi),
+      routes           : Array(Network::Route),
+      gpus             : Array(Graphics::GPU),
+      displays         : Array(Graphics::Display),
+      hwmon            : Array(Sensors::Chip),
+      power_supplies   : Array(Power::Supply),
+      host             : Host::Info,
+      file_descriptors : Limits::FileDescriptors,
+      thread_limits    : Limits::Threads,
+      captured_at      : Time
 
 
 MODULE: Sysdat::Format
@@ -486,7 +737,7 @@ Module Methods
   `def self.decode_endpoint(field : String, ipv6 : Bool) : Tuple(String, Int32)`
   `def self.format_ipv4(bytes : StaticArray(UInt8, 4)) : String`
   `def self.format_ipv6(bytes : StaticArray(UInt8, 16)) : String`
-  `def self.parse_cpu_times(fields : Array(String)) : CPUTimes`
+  `def self.parse_cpu_times(fields : Array(String)) : CPU::Times`
   `def self.parse_scheduler(raw : String?) : String`
 
 
@@ -516,12 +767,12 @@ JSON Converters
       def self.to_json(value : Time::Span, builder : JSON::Builder) : Nil
       def self.from_json(pull : JSON::PullParser) : Time::Span
     end
-  
+
     module Sysdat::NilableSpanConverter
       def self.to_json(value : Time::Span?, builder : JSON::Builder) : Nil
       def self.from_json(pull : JSON::PullParser) : Time::Span?
     end
-  
+
     module Sysdat::LoadAverageConverter
       def self.to_json(value : Tuple(Float64, Float64, Float64), builder : JSON::Builder) : Nil
       def self.from_json(pull : JSON::PullParser) : Tuple(Float64, Float64, Float64)
@@ -557,7 +808,7 @@ Structs
       f_type    : LibC::UInt
       f_spare   : StaticArray(LibC::Int, 5)
     end
-  
+
     struct UtsName
       sysname    : StaticArray(UInt8, 65)
       nodename   : StaticArray(UInt8, 65)
@@ -566,17 +817,17 @@ Structs
       machine    : StaticArray(UInt8, 65)
       domainname : StaticArray(UInt8, 65)
     end
-  
+
     struct UtmpExit
       e_termination : Int16
       e_exit        : Int16
     end
-  
+
     struct UtmpTimeval
       tv_sec  : Int32
       tv_usec : Int32
     end
-  
+
     struct Utmp
       ut_type     : Int16
       ut_pid      : LibC::PidT
@@ -590,19 +841,19 @@ Structs
       ut_addr_v6  : StaticArray(Int32, 4)
       ut_reserved : StaticArray(UInt8, 20)
     end
-  
+
     struct Sockaddr
       sa_family : LibC::UShort
       sa_data   : StaticArray(UInt8, 14)
     end
-  
+
     struct SockaddrIn
       sin_family : LibC::UShort
       sin_port   : UInt16
       sin_addr   : StaticArray(UInt8, 4)
       sin_zero   : StaticArray(UInt8, 8)
     end
-  
+
     struct SockaddrIn6
       sin6_family   : LibC::UShort
       sin6_port     : UInt16
@@ -610,7 +861,7 @@ Structs
       sin6_addr     : StaticArray(UInt8, 16)
       sin6_scope_id : UInt32
     end
-  
+
     struct Ifaddrs
       ifa_next    : Ifaddrs*
       ifa_name    : LibC::Char*

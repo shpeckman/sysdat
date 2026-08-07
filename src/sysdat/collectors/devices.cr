@@ -1,6 +1,6 @@
 # src/sysdat/collectors/devices.cr
-module Sysdat
-  record USBDevice,
+module Sysdat::Devices
+  record USB,
     vendor_id    : String,
     product_id   : String,
     manufacturer : String,
@@ -8,7 +8,7 @@ module Sysdat
     include JSON::Serializable
   end
 
-  record PCIDevice,
+  record PCI,
     address   : String,
     vendor_id : String,
     device_id : String,
@@ -23,52 +23,81 @@ module Sysdat
     include JSON::Serializable
   end
 
-  def self.usb_devices : Array(USBDevice)
-    SysFS.children("/sys/bus/usb/devices").compact_map do |entry|
-      base      = "/sys/bus/usb/devices/#{entry}"
-      vendor_id = SysFS.read_line("#{base}/idVendor")
-      next unless vendor_id
+  class USBCollector
+    include Sysdat::Collector(Array(USB))
 
-      USBDevice.new(
-        vendor_id: vendor_id,
-        product_id: SysFS.read_line("#{base}/idProduct") || "Unknown",
-        manufacturer: SysFS.read_line("#{base}/manufacturer") || "",
-        product: SysFS.read_line("#{base}/product") || "Unknown Device",
-      )
+    def collect : Array(USB)
+      SysFS.children("/sys/bus/usb/devices").compact_map do |entry|
+        base      = "/sys/bus/usb/devices/#{entry}"
+        vendor_id = SysFS.read_line("#{base}/idVendor")
+        next unless vendor_id
+
+        USB.new(
+          vendor_id: vendor_id,
+          product_id: SysFS.read_line("#{base}/idProduct") || "Unknown",
+          manufacturer: SysFS.read_line("#{base}/manufacturer") || "",
+          product: SysFS.read_line("#{base}/product") || "Unknown Device",
+        )
+      end
     end
   end
 
-  def self.pci_devices : Array(PCIDevice)
-    SysFS.children("/sys/bus/pci/devices").map do |entry|
-      base = "/sys/bus/pci/devices/#{entry}"
+  class PCICollector
+    include Sysdat::Collector(Array(PCI))
 
-      PCIDevice.new(
-        address: entry,
-        vendor_id: hex_id("#{base}/vendor"),
-        device_id: hex_id("#{base}/device"),
-        class_id: hex_id("#{base}/class"),
-      )
+    def collect : Array(PCI)
+      SysFS.children("/sys/bus/pci/devices").map do |entry|
+        base = "/sys/bus/pci/devices/#{entry}"
+
+        PCI.new(
+          address: entry,
+          vendor_id: Devices.hex_id("#{base}/vendor"),
+          device_id: Devices.hex_id("#{base}/device"),
+          class_id: Devices.hex_id("#{base}/class"),
+        )
+      end
     end
   end
 
-  def self.kernel_modules : Array(KernelModule)
-    modules = [] of KernelModule
+  class KernelModulesCollector
+    include Sysdat::Collector(Array(KernelModule))
 
-    SysFS.read_lines("/proc/modules") do |line|
-      fields = line.split
-      next if fields.size < 3
+    def collect : Array(KernelModule)
+      modules = [] of KernelModule
 
-      modules << KernelModule.new(
-        name: fields[0],
-        size_bytes: fields[1].to_u64? || 0_u64,
-        ref_count: fields[2].to_u32? || 0_u32,
-      )
+      SysFS.read_lines("/proc/modules") do |line|
+        fields = line.split
+        next if fields.size < 3
+
+        modules << KernelModule.new(
+          name: fields[0],
+          size_bytes: fields[1].to_u64? || 0_u64,
+          ref_count: fields[2].to_u32? || 0_u32,
+        )
+      end
+
+      modules
     end
-
-    modules
   end
 
-  private def self.hex_id(path : String) : String
+  protected def self.hex_id(path : String) : String
     (SysFS.read_line(path) || "").strip.lchop("0x")
+  end
+
+  class Facade
+    def initialize(@system : Sysdat::System)
+    end
+
+    def usb_devices : Array(USB)
+      USBCollector.new.collect
+    end
+
+    def pci_devices : Array(PCI)
+      PCICollector.new.collect
+    end
+
+    def kernel_modules : Array(KernelModule)
+      KernelModulesCollector.new.collect
+    end
   end
 end
