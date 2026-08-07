@@ -6,6 +6,70 @@ module Sysdat::CPU
     include JSON::Serializable
   end
 
+  record Thread,
+    processor : Int32,
+    core_mhz  : Float64,
+    governor  : String do
+    include JSON::Serializable
+  end
+
+  record Core,
+    core_id : Int32,
+    threads : Array(Thread) do
+    include JSON::Serializable
+
+    def smt? : Bool
+      threads.size > 1
+    end
+  end
+
+  record Package,
+    physical_package_id : Int32,
+    die_id              : Int32?,
+    cluster_id          : Int32?,
+    cores               : Array(Core) do
+    include JSON::Serializable
+
+    def thread_count : Int32
+      cores.sum(&.threads.size)
+    end
+  end
+
+  record Vulnerability,
+    name   : String,
+    status : String do
+    include JSON::Serializable
+
+    def mitigated? : Bool
+      status.starts_with?("Mitigation") || status.starts_with?("Not affected")
+    end
+
+    def vulnerable? : Bool
+      status.starts_with?("Vulnerable")
+    end
+  end
+
+  record FrequencyBucket,
+    khz        : Int64,
+    time_ticks : UInt64,
+    time       : Time::Span do
+    include JSON::Serializable
+
+    @[JSON::Field(converter: Sysdat::SpanConverter)]
+    @time : Time::Span
+  end
+
+  record FrequencyStats,
+    processor   : Int32,
+    transitions : UInt64,
+    buckets     : Array(FrequencyBucket) do
+    include JSON::Serializable
+
+    def total : Time::Span
+      buckets.reduce(Time::Span.zero) { |sum, bucket| sum + bucket.time }
+    end
+  end
+
   record Info,
     model_name     : String,
     flags          : Array(String),
@@ -13,6 +77,7 @@ module Sysdat::CPU
     physical_cores : Int32,
     base_mhz       : Float64,
     cache_kb       : Int32,
+    microcode      : String,
     core_mhz       : Array(Float64),
     core_governors : Array(String),
     thermal_zones  : Array(ThermalZone) do
@@ -61,6 +126,7 @@ module Sysdat::CPU
       logical_cores    = 0
       cache_kb         = 0
       cpuinfo_mhz      = 0.0
+      microcode        = ""
       cores_per_socket = 0
       sockets          = Set(Int32).new
 
@@ -79,6 +145,8 @@ module Sysdat::CPU
           cpuinfo_mhz = value.to_f?(strict: false) || 0.0 if cpuinfo_mhz.zero?
         when "cache size"
           cache_kb = value.to_i?(strict: false) || 0 if cache_kb.zero?
+        when "microcode"
+          microcode = value if microcode.empty?
         when "flags"
           flags = value.split if flags.empty?
         when "physical id"
@@ -88,6 +156,10 @@ module Sysdat::CPU
         end
       end
       raise Error.new("/proc/cpuinfo is unavailable") unless available
+
+      if microcode.empty?
+        microcode = SysFS.read_line("/sys/devices/system/cpu/cpu0/microcode/version") || ""
+      end
 
       physical_cores = cores_per_socket * sockets.size
       physical_cores = logical_cores if physical_cores.zero?
@@ -111,6 +183,7 @@ module Sysdat::CPU
         physical_cores: physical_cores,
         base_mhz: base_mhz,
         cache_kb: cache_kb,
+        microcode: microcode,
         core_mhz: core_mhz,
         core_governors: core_governors,
         thermal_zones: CPU.thermal_zones,
@@ -141,6 +214,128 @@ module Sysdat::CPU
     end
   end
 
+  class TopologyCollector
+    include Sysdat::Collector(Array(Package))
+
+    private record ProbedThread,
+      processor           : Int32,
+      physical_package_id : Int32,
+      die_id              : Int32?,
+      cluster_id          : Int32?,
+      core_id             : Int32,
+      core_mhz            : Float64,
+      governor            : String
+
+    def collect : Array(Package)
+      probed = [] of ProbedThread
+
+      SysFS.children("/sys/devices/system/cpu").each do |entry|
+        next unless entry.starts_with?("cpu")
+        processor = entry.lchop("cpu").to_i?
+        next unless processor
+
+        base = "/sys/devices/system/cpu/#{entry}/topology"
+        next unless File.exists?("#{base}/core_id")
+
+        cpufreq = "/sys/devices/system/cpu/#{entry}/cpufreq"
+        probed << ProbedThread.new(
+          processor: processor,
+          physical_package_id: (SysFS.read_int("#{base}/physical_package_id") || -1_i64).to_i32,
+          die_id: SysFS.read_int("#{base}/die_id").try(&.to_i32),
+          cluster_id: SysFS.read_int("#{base}/cluster_id").try(&.to_i32),
+          core_id: (SysFS.read_int("#{base}/core_id") || 0_i64).to_i32,
+          core_mhz: SysFS.read_int("#{cpufreq}/scaling_cur_freq").try { |khz| khz / 1000.0 } || 0.0,
+          governor: SysFS.read_line("#{cpufreq}/scaling_governor") || "unknown",
+        )
+      end
+
+      build_tree(probed)
+    end
+
+    private def build_tree(probed : Array(ProbedThread)) : Array(Package)
+      packages = [] of Package
+
+      probed.group_by(&.physical_package_id).each do |package_id, package_threads|
+        sample = package_threads.first
+        cores  = [] of Core
+
+        package_threads.group_by(&.core_id).each do |core_id, core_threads|
+          threads = core_threads.sort_by(&.processor).map do |thread|
+            Thread.new(
+              processor: thread.processor,
+              core_mhz: thread.core_mhz,
+              governor: thread.governor,
+            )
+          end
+          cores << Core.new(core_id: core_id, threads: threads)
+        end
+
+        cores.sort_by!(&.core_id)
+        packages << Package.new(
+          physical_package_id: package_id,
+          die_id: sample.die_id,
+          cluster_id: sample.cluster_id,
+          cores: cores,
+        )
+      end
+
+      packages.sort_by!(&.physical_package_id)
+    end
+  end
+
+  class VulnerabilitiesCollector
+    include Sysdat::Collector(Array(Vulnerability))
+
+    def collect : Array(Vulnerability)
+      base = "/sys/devices/system/cpu/vulnerabilities"
+
+      SysFS.children(base).compact_map do |entry|
+        status = SysFS.read_line("#{base}/#{entry}")
+        next unless status
+        Vulnerability.new(name: entry, status: status.strip)
+      end
+    end
+  end
+
+  class FrequencyStatsCollector
+    include Sysdat::Collector(Array(FrequencyStats))
+
+    def collect : Array(FrequencyStats)
+      stats = [] of FrequencyStats
+
+      SysFS.children("/sys/devices/system/cpu").each do |entry|
+        next unless entry.starts_with?("cpu")
+        processor = entry.lchop("cpu").to_i?
+        next unless processor
+
+        base = "/sys/devices/system/cpu/#{entry}/cpufreq/stats"
+        next unless File.exists?("#{base}/time_in_state")
+
+        buckets = [] of FrequencyBucket
+        SysFS.read_lines("#{base}/time_in_state") do |line|
+          fields = line.split
+          next if fields.size < 2
+          khz  = fields[0].to_i64?
+          time = fields[1].to_u64?
+          next unless khz && time
+          buckets << FrequencyBucket.new(
+            khz: khz,
+            time_ticks: time,
+            time: CPU.ticks_to_span(time),
+          )
+        end
+
+        stats << FrequencyStats.new(
+          processor: processor,
+          transitions: SysFS.read_int("#{base}/total_trans").try(&.to_u64) || 0_u64,
+          buckets: buckets,
+        )
+      end
+
+      stats.sort_by!(&.processor)
+    end
+  end
+
   def self.thermal_zones : Array(ThermalZone)
     zones = [] of ThermalZone
     index = 0
@@ -160,6 +355,10 @@ module Sysdat::CPU
     zones
   end
 
+  protected def self.ticks_to_span(ticks : UInt64) : Time::Span
+    Sysdat.span_from_nanoseconds((ticks * 10_000_000).to_i64!)
+  end
+
   class Facade
     def initialize(@system : Sysdat::System)
     end
@@ -174,6 +373,18 @@ module Sysdat::CPU
 
     def thermal_zones : Array(ThermalZone)
       CPU.thermal_zones
+    end
+
+    def topology : Array(Package)
+      TopologyCollector.new.collect
+    end
+
+    def vulnerabilities : Array(Vulnerability)
+      VulnerabilitiesCollector.new.collect
+    end
+
+    def frequency_stats : Array(FrequencyStats)
+      FrequencyStatsCollector.new.collect
     end
 
     def sampler : Sysdat::Sampler(Stats, Float64)

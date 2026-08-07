@@ -23,6 +23,8 @@ module Sysdat
         kernel_stats: kernel.stats,
         cpu: cpu.info,
         cpu_stats: cpu.stats,
+        cpu_topology: cpu.topology,
+        cpu_vulnerabilities: cpu.vulnerabilities,
         memory: memory.read,
         pressure: pressure.read,
         mounts: storage.mounts,

@@ -1,4 +1,6 @@
 # src/sysdat/sys_fs.cr
+require "compress/gzip"
+
 module Sysdat::SysFS
   extend self
 
@@ -11,6 +13,14 @@ module Sysdat::SysFS
   def read_all(path : String) : String?
     File.read(path)
   rescue IO::Error
+    nil
+  end
+
+  def read_gzip(path : String) : String?
+    File.open(path) do |file|
+      Compress::Gzip::Reader.open(file, &.gets_to_end)
+    end
+  rescue IO::Error | Compress::Gzip::Error
     nil
   end
 
