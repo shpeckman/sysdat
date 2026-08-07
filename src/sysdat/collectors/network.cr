@@ -1,4 +1,4 @@
-# src/sysdat/network.cr
+# src/sysdat/collectors/network.cr
 module Sysdat
   TCP_STATES = %w[
     UNKNOWN ESTABLISHED SYN_SENT SYN_RECV FIN_WAIT1

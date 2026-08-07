@@ -1,4 +1,4 @@
-# src/sysdat/memory.cr
+# src/sysdat/collectors/memory.cr
 module Sysdat
   record Memory,
     total            : UInt64,

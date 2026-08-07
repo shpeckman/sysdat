@@ -1,4 +1,4 @@
-# src/sysdat/host.cr
+# src/sysdat/collectors/host.cr
 module Sysdat
   VM_PRODUCT_MARKERS = {"KVM", "VirtualBox", "VMware", "Bochs"}
   VM_VENDOR_MARKERS  = {"QEMU"}

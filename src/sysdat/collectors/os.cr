@@ -1,4 +1,4 @@
-# src/sysdat/os.cr
+# src/sysdat/collectors/os.cr
 module Sysdat
   record OS,
     sysname           : String,

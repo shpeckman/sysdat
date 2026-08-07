@@ -1,4 +1,4 @@
-# src/sysdat/graphics.cr
+# src/sysdat/collectors/graphics.cr
 module Sysdat
   GPU_VENDORS = {
     "0x8086" => "Intel",

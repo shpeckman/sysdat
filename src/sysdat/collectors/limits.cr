@@ -1,4 +1,4 @@
-# src/sysdat/limits.cr
+# src/sysdat/collectors/limits.cr
 module Sysdat
   record FileDescriptorLimits,
     allocated : UInt64,

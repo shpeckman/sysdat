@@ -1,4 +1,4 @@
-# src/sysdat/power.cr
+# src/sysdat/collectors/power.cr
 module Sysdat
   record PowerSupply,
     name                   : String,

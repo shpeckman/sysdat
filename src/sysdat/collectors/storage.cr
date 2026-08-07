@@ -1,4 +1,4 @@
-# src/sysdat/storage.cr
+# src/sysdat/collectors/storage.cr
 module Sysdat
   POOLED_FS_TYPES  = {"zfs", "btrfs"}
   SKIPPED_FS_TYPES = {"tmpfs", "devtmpfs"}

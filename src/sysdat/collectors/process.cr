@@ -1,4 +1,4 @@
-# src/sysdat/process.cr
+# src/sysdat/collectors/process.cr
 module Sysdat
   enum ProcessSort
     CPU

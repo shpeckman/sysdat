@@ -1,4 +1,4 @@
-# src/sysdat/sensors.cr
+# src/sysdat/collectors/sensors.cr
 module Sysdat
   enum SensorKind
     Temperature

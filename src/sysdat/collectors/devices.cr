@@ -1,4 +1,4 @@
-# src/sysdat/devices.cr
+# src/sysdat/collectors/devices.cr
 module Sysdat
   record USBDevice,
     vendor_id    : String,

@@ -1,4 +1,4 @@
-# src/sysdat/pressure.cr
+# src/sysdat/collectors/pressure.cr
 module Sysdat
   record PressureMetric,
     avg10  : Float64,

@@ -1,4 +1,4 @@
-# src/sysdat/cpu.cr
+# src/sysdat/collectors/cpu.cr
 module Sysdat
   record ThermalZone,
     kind    : String,
