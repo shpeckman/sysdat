@@ -84,6 +84,7 @@ module Sysdat::Process
     state                      : Char,
     utime                      : UInt64,
     stime                      : UInt64,
+    start_ticks                : UInt64,
     threads                    : Int32,
     fd_count                   : UInt32,
     rss_bytes                  : UInt64,
@@ -96,6 +97,23 @@ module Sysdat::Process
     io                         : IO?,
     exe                        : String?,
     cwd                        : String? do
+    include JSON::Serializable
+
+    def cpu_ticks : UInt64
+      utime + stime
+    end
+  end
+
+  record Stat,
+    pid         : Int32,
+    ppid        : Int32,
+    uid         : UInt32,
+    name        : String,
+    state       : Char,
+    utime       : UInt64,
+    stime       : UInt64,
+    start_ticks : UInt64,
+    rss_bytes   : UInt64 do
     include JSON::Serializable
 
     def cpu_ticks : UInt64
@@ -230,6 +248,33 @@ module Sysdat::Process
     end
   end
 
+  class StatsCollector
+    include Sysdat::Collector(Array(Stat))
+
+    def collect : Array(Stat)
+      page_size = Process.page_size
+      stats     = [] of Stat
+
+      begin
+        Dir.each_child("/proc") do |entry|
+          pid = entry.to_i?
+          next unless pid && pid > 0
+
+          begin
+            if stat = Process.read_stat(pid, page_size)
+              stats << stat
+            end
+          rescue ::IO::Error
+          end
+        end
+      rescue ::IO::Error
+        raise Error.new("/proc is unavailable")
+      end
+
+      stats
+    end
+  end
+
   private record ProcStatus,
     uid                        : UInt32,
     seccomp                    : Seccomp,
@@ -241,6 +286,10 @@ module Sysdat::Process
     cap_effective              : UInt64,
     cap_bounding               : UInt64,
     cap_ambient                : UInt64
+
+  private record StatLine,
+    name   : String,
+    fields : Array(String)
 
   protected def self.page_size : UInt64
     value = LibSys.sysconf(LibSys::SC_PAGESIZE)
@@ -257,6 +306,46 @@ module Sysdat::Process
       end
     end
     cache
+  end
+
+  protected def self.read_stat_line(pid : Int32) : StatLine?
+    content = SysFS.read_all("/proc/#{pid}/stat")
+    return nil unless content
+
+    open_paren  = content.index('(')
+    close_paren = content.rindex(')')
+    return nil unless open_paren && close_paren && close_paren > open_paren
+
+    fields = content[(close_paren + 1)..].split
+    return nil if fields.size < 22
+
+    StatLine.new(content[open_paren + 1...close_paren], fields)
+  end
+
+  protected def self.page_bytes(field : String, page_size : UInt64) : UInt64
+    pages = field.to_i64? || 0_i64
+    (pages > 0 ? pages.to_u64 : 0_u64) * page_size
+  end
+
+  protected def self.read_stat(pid : Int32, page_size : UInt64) : Stat?
+    line = read_stat_line(pid)
+    return nil unless line
+
+    info = File.info?("/proc/#{pid}")
+    return nil unless info
+
+    fields = line.fields
+    Stat.new(
+      pid: pid,
+      ppid: fields[1].to_i? || 0,
+      uid: info.owner_id.to_u32? || 0_u32,
+      name: line.name,
+      state: fields[0][0]? || '?',
+      utime: fields[11].to_u64? || 0_u64,
+      stime: fields[12].to_u64? || 0_u64,
+      start_ticks: fields[19].to_u64? || 0_u64,
+      rss_bytes: page_bytes(fields[21], page_size),
+    )
   end
 
   protected def self.read_status(pid : Int32) : ProcStatus
@@ -315,21 +404,12 @@ module Sysdat::Process
   end
 
   protected def self.read_process(pid : Int32, page_size : UInt64, total_memory : UInt64, user_cache : Hash(UInt32, String), want_io : Bool) : Info?
-    content = SysFS.read_all("/proc/#{pid}/stat")
-    return nil unless content
+    line = read_stat_line(pid)
+    return nil unless line
 
-    open_paren  = content.index('(')
-    close_paren = content.rindex(')')
-    return nil unless open_paren && close_paren && close_paren > open_paren
-
-    name   = content[open_paren + 1...close_paren]
-    fields = content[(close_paren + 1)..].split
-    return nil if fields.size < 22
-
-    rss_pages = fields[21].to_i64? || 0_i64
-    rss_bytes = (rss_pages > 0 ? rss_pages.to_u64 : 0_u64) * page_size
-
-    status = read_status(pid)
+    fields    = line.fields
+    rss_bytes = page_bytes(fields[21], page_size)
+    status    = read_status(pid)
 
     cmdline_raw = SysFS.read_all("/proc/#{pid}/cmdline") || ""
     cmdline     = cmdline_raw.split('\0', remove_empty: true)
@@ -339,11 +419,12 @@ module Sysdat::Process
       ppid: fields[1].to_i? || 0,
       uid: status.uid,
       user: user_cache[status.uid]? || status.uid.to_s,
-      name: name,
+      name: line.name,
       cmdline: cmdline,
       state: fields[0][0]? || '?',
       utime: fields[11].to_u64? || 0_u64,
       stime: fields[12].to_u64? || 0_u64,
+      start_ticks: fields[19].to_u64? || 0_u64,
       threads: fields[17].to_i? || 0,
       fd_count: SysFS.count_children("/proc/#{pid}/fd"),
       rss_bytes: rss_bytes,
@@ -374,6 +455,12 @@ module Sysdat::Process
       read_bytes: values["read_bytes"],
       write_bytes: values["write_bytes"],
     )
+  end
+
+  def self.stat(pid : Int32) : Stat?
+    read_stat(pid, page_size)
+  rescue ::IO::Error
+    nil
   end
 
   def self.details(pid : Int32) : Details?
@@ -513,6 +600,14 @@ module Sysdat::Process
 
     def list(sort : Sort = Sort::CPU, limit : Int32? = nil, io : Bool = false) : Array(Info)
       Collector.new(sort, limit, io).collect
+    end
+
+    def stats : Array(Stat)
+      StatsCollector.new.collect
+    end
+
+    def stat(pid : Int32) : Stat?
+      Process.stat(pid)
     end
 
     def details(pid : Int32) : Details?
